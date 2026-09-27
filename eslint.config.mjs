@@ -7,7 +7,7 @@ export default defineConfig([
   globalIgnores(['main.js', 'node_modules/', 'test/', 'scripts/', 'build.js', 'eslint.config.mjs']),
   ...obsidianmd.configs.recommended,
   {
-    files: ['src/**/*.js'],
+    files: ['src/**/*.ts'],
     languageOptions: {
       parserOptions: {
         projectService: {

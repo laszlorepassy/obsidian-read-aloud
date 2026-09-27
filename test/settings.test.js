@@ -4,38 +4,16 @@
 // declarations against a stand-in for Obsidian, in each state of calibre.
 const test = require('node:test');
 const assert = require('node:assert');
-const path = require('path');
-const Module = require('module');
-const { execFileSync } = require('child_process');
+const { loadBundle, obsidianStub } = require('./bundle');
 
-const root = path.join(__dirname, '..');
-
-function load() {
-  execFileSync(process.execPath, [path.join(root, 'build.js')]);
-  class PluginSettingTab {
-    constructor(app, plugin) { this.app = app; this.plugin = plugin; this.updates = 0; }
-    getControlValue(key) { return this.plugin.settings[key]; }
-    update() { this.updates++; }
-    hide() {}
-  }
-  const obsidian = {
-    Plugin: class {}, PluginSettingTab, Notice: class {}, MarkdownView: class {},
-    FileSystemAdapter: class {}, Modal: class {}, MarkdownRenderer: {}, Component: class {},
-    setIcon() {}, setTooltip() {}, getLanguage: () => 'en',
-  };
-  const original = Module._load;
-  Module._load = function (request, ...rest) {
-    return request === 'obsidian' ? obsidian : original.call(this, request, ...rest);
-  };
-  try {
-    delete require.cache[path.join(root, 'main.js')];
-    return require(path.join(root, 'main.js'));
-  } finally {
-    Module._load = original;
-  }
+class PluginSettingTab {
+  constructor(app, plugin) { this.app = app; this.plugin = plugin; this.updates = 0; }
+  getControlValue(key) { return this.plugin.settings[key]; }
+  update() { this.updates++; }
+  hide() {}
 }
 
-const { ReadAloudSettingTab, DEFAULT_SETTINGS } = load();
+const { ReadAloudSettingTab, DEFAULT_SETTINGS } = loadBundle(obsidianStub({ PluginSettingTab }));
 
 function tab(engine, settings = {}) {
   const plugin = { settings: { ...DEFAULT_SETTINGS, ...settings }, calibre: () => ({ label: '/opt/calibre' }) };

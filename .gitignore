@@ -2,3 +2,5 @@ node_modules/
 data.json
 /piper_server.py
 .DS_Store
+.claude/
+test/.build-*/

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { EditorState } from '@codemirror/state';
-import { readingField, setReadingForTest } from '../src/highlight.js';
+import { readingField, setReadingForTest } from '../src/highlight.ts';
 
 test('the highlight follows edits made before and inside it', () => {
   let state = EditorState.create({ doc: 'Első bekezdés.\n\nMásodik bekezdés.', extensions: [readingField] });

@@ -1,3 +1,4 @@
+"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -26,7 +27,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/main.js
+// src/main.ts
 var main_exports = {};
 __export(main_exports, {
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
@@ -35,11 +36,11 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
-var fs3 = __toESM(require("fs"), 1);
-var os2 = __toESM(require("os"), 1);
-var path3 = __toESM(require("path"), 1);
+var fs3 = __toESM(require("fs"));
+var os2 = __toESM(require("os"));
+var path3 = __toESM(require("path"));
 
-// src/segmenter.js
+// src/segmenter.ts
 var FENCE = /^\s*(```+|~~~+)/;
 var MATH_FENCE = /^\s*\$\$\s*$/;
 var COMMENT_FENCE = /^\s*%%\s*$/;
@@ -67,15 +68,15 @@ function frontMatterEnd(text) {
 }
 function blocks(text) {
   const result = [];
-  let current = null;
+  const state = { current: null };
   let skipUntil = null;
   const close = () => {
-    if (current) result.push(current);
-    current = null;
+    if (state.current) result.push(state.current);
+    state.current = null;
   };
   const open = (from, to, kind) => {
     close();
-    current = { from, to, kind };
+    state.current = { from, to, kind };
   };
   const bodyStart = frontMatterEnd(text);
   for (const line of lines(text)) {
@@ -119,12 +120,12 @@ function blocks(text) {
       const rest = t.slice(m[1].length);
       const item = LIST_ITEM.exec(rest);
       const prefix = m[1].length + (item ? item[1].length : 0);
-      if (current && current.kind === "quote" && !item) current.to = line.end;
+      if (state.current && state.current.kind === "quote" && !item) state.current.to = line.end;
       else open(line.start + prefix, line.end, "quote");
     } else if (m = LIST_ITEM.exec(t)) {
       open(line.start + m[1].length, line.end, "item");
-    } else if (current && current.kind !== "quote") {
-      current.to = line.end;
+    } else if (state.current && state.current.kind !== "quote") {
+      state.current.to = line.end;
     } else {
       open(line.start + (t.length - t.trimStart().length), line.end, "paragraph");
     }
@@ -144,7 +145,7 @@ function speakable(source) {
   s = s.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2");
   s = s.replace(/\[\[([^\]]*)\]\]/g, (_, target) => (
     // [[note#heading]]
-    target.replace(/#\^.*$/, "").replace(/#/g, " ").split("/").pop()
+    target.replace(/#\^.*$/, "").replace(/#/g, " ").split("/").pop() ?? ""
   ));
   s = s.replace(/\[\^[^\]]*\]/g, "");
   s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
@@ -286,32 +287,45 @@ function segment(source, { maxLength = 300 } = {}) {
   return result;
 }
 
-// src/text-match.js
+// src/text-match.ts
 function matchText(pieces, text, hint = 0) {
-  const isKey = (ch) => /[\p{L}\p{N}]/u.test(ch);
   let hay = "";
   const where = [];
   pieces.forEach((piece2, p) => {
-    for (let i = 0; i < piece2.length; i++) {
-      if (isKey(piece2[i])) {
-        hay += piece2[i].toLowerCase();
+    let i = 0;
+    for (const ch of piece2) {
+      if (isKey(ch)) {
+        hay += foldCase(ch);
         where.push([p, i]);
       }
+      i += ch.length;
     }
   });
   let needle = "";
-  for (const ch of text) if (isKey(ch)) needle += ch.toLowerCase();
+  for (const ch of text) if (isKey(ch)) needle += foldCase(ch);
   if (!needle) return null;
+  const hayPoints = [...hay];
+  const needlePoints = [...needle];
+  const joinedAt = (i) => hayPoints.slice(i, i + needlePoints.length).join("");
+  hint = Math.min(hint, hayPoints.length);
   let best = -1;
-  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + 1)) {
+  for (let at = 0; at + needlePoints.length <= hayPoints.length; at++) {
+    if (hayPoints[at] !== needlePoints[0] || joinedAt(at) !== needle) continue;
     if (best === -1 || Math.abs(at - hint) < Math.abs(best - hint)) best = at;
   }
   if (best === -1) return null;
-  const [endPiece, endOffset] = where[best + needle.length - 1];
-  let end = endOffset + 1;
+  const [endPiece, endOffset] = where[best + needlePoints.length - 1];
   const piece = pieces[endPiece];
-  while (end < piece.length && /[.!?…,;:"'”’»)\]]/.test(piece[end])) end++;
+  let end = endOffset + ((piece.codePointAt(endOffset) ?? 0) > 65535 ? 2 : 1);
+  while (end < piece.length && /[.!?…,;:"'”’»)\]。！？，、；：」』）]/.test(piece[end])) end++;
   return { start: where[best], end: [endPiece, end] };
+}
+function isKey(ch) {
+  return /[\p{L}\p{N}]/u.test(ch);
+}
+function foldCase(ch) {
+  const lower = ch.toLowerCase();
+  return [...lower].length === 1 ? lower : ch;
 }
 function keyLength(text) {
   let n = 0;
@@ -319,13 +333,23 @@ function keyLength(text) {
   return n;
 }
 
-// src/piper-client.js
+// src/piper-client.ts
 var import_child_process = require("child_process");
-var fs = __toESM(require("fs"), 1);
-var path = __toESM(require("path"), 1);
-var timers = typeof window === "undefined" ? { setTimeout, clearTimeout } : window;
+var fs = __toESM(require("fs"));
+var path = __toESM(require("path"));
 var PiperClient = class {
-  constructor({ serverSource, scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
+  constructor({
+    serverSource,
+    scriptDir,
+    onAudio,
+    onError,
+    isBusy,
+    timers = window,
+    idleMinutes = 10,
+    startSeconds = 90
+  }) {
+    this.startReject = null;
+    this.timers = timers;
     this.serverSource = serverSource;
     this.scriptDir = scriptDir;
     this.info = null;
@@ -339,7 +363,7 @@ var PiperClient = class {
     this.proc = null;
     this.ready = null;
     this.voiceKey = null;
-    this.idleTimer = null;
+    this.idleTimer = void 0;
   }
   scriptPath(dir) {
     fs.mkdirSync(dir, { recursive: true });
@@ -386,7 +410,7 @@ var PiperClient = class {
       };
       proc.stdin.on("error", () => {
       });
-      const timeout = timers.setTimeout(() => {
+      const timeout = this.timers.setTimeout(() => {
         if (started) return;
         reject(new Error(`Piper did not start in ${this.startMs / 1e3} seconds.
 ${stderr.trim()}`));
@@ -399,20 +423,12 @@ ${stderr.trim()}`));
           if (!header) {
             const nl = buffer.indexOf(10);
             if (nl === -1) return;
-            let line = buffer.subarray(0, nl).toString("utf8");
+            const line = buffer.subarray(0, nl).toString("utf8");
             buffer = buffer.subarray(nl + 1);
             const brace = line.indexOf('{"');
             if (brace === -1) continue;
-            line = line.slice(brace);
-            try {
-              header = JSON.parse(line);
-            } catch {
-              continue;
-            }
-            if (!header || !Number.isInteger(header.bytes) || header.bytes < 0) {
-              header = null;
-              continue;
-            }
+            header = parseHeader(line.slice(brace));
+            if (!header) continue;
           }
           if (buffer.length < header.bytes) return;
           const pcm = buffer.subarray(0, header.bytes);
@@ -421,22 +437,22 @@ ${stderr.trim()}`));
           header = null;
           if (h.ready) {
             started = true;
-            timers.clearTimeout(timeout);
-            this.info = h;
-            resolve(h);
+            this.timers.clearTimeout(timeout);
+            this.info = { calibre: h.calibre ?? "", voicesDir: h.voicesDir ?? "" };
+            resolve(this.info);
             continue;
           }
           if (h.voiceFailed) this.voiceKey = null;
           if (h.fatal) {
-            reject(new Error(h.error));
+            reject(new Error(h.error ?? "Piper failed to start."));
             continue;
           }
           if (h.catalog) {
             this.gotCatalog(h);
             continue;
           }
-          if (h.download) {
-            this.gotDownload(h);
+          if (h.download !== void 0) {
+            this.gotDownload({ ...h, download: h.download });
             continue;
           }
           if (h.error) {
@@ -444,19 +460,19 @@ ${stderr.trim()}`));
             continue;
           }
           if (h.id === void 0) continue;
-          this.onAudio(h.id, toFloat32(pcm), h.rate, h.last);
+          this.onAudio(h.id, toFloat32(pcm), h.rate ?? 22050, h.last === true);
         }
       });
       proc.stderr.on("data", (d) => {
         stderr = (stderr + d.toString()).slice(-4e3);
       });
       proc.on("error", (err) => {
-        timers.clearTimeout(timeout);
+        this.timers.clearTimeout(timeout);
         if (!started) reject(err);
         this.forget(proc, err);
       });
       proc.on("exit", (code, signal) => {
-        timers.clearTimeout(timeout);
+        this.timers.clearTimeout(timeout);
         const how = signal ? `signal ${signal}` : `exit code ${code}`;
         const gone = new Error(`Piper stopped (${how}).
 ${stderr.trim()}`);
@@ -492,7 +508,11 @@ ${stderr.trim()}`));
     for (const d of this.downloads.values()) d.reject(err);
     this.downloads.clear();
   }
-  /** The voices calibre knows, with `installed` set for those in `dir`. */
+  /**
+   * The voices calibre knows, with `installed` set for those in `dir`. Fails
+   * after 30 seconds without an answer; a late answer still goes to this
+   * request (answers come in order), just to nobody waiting.
+   */
   catalog(dir) {
     this.touch();
     return new Promise((resolve, reject) => {
@@ -500,23 +520,41 @@ ${stderr.trim()}`));
         reject(new Error("Piper is not running."));
         return;
       }
-      this.catalogWaiters.push({ resolve, reject });
+      let settled = false;
+      const timer = this.timers.setTimeout(() => {
+        settled = true;
+        reject(new Error("Piper did not answer with the list of voices."));
+      }, 3e4);
+      const settle = (fn) => {
+        if (settled) return;
+        settled = true;
+        this.timers.clearTimeout(timer);
+        fn();
+      };
+      this.catalogWaiters.push({
+        resolve: (value) => settle(() => resolve(value)),
+        reject: (err) => settle(() => reject(err))
+      });
       this.send({ cmd: "catalog", dir: dir || void 0 });
     });
   }
   gotCatalog(h) {
     const w = this.catalogWaiters.shift();
-    if (w) w.resolve({ voices: h.catalog, dir: h.dir });
+    if (!w) return;
+    if (h.catalogError) w.reject(new Error(h.catalogError));
+    else w.resolve({ voices: h.catalog ?? [], dir: h.dir ?? "" });
   }
   /** Downloads a voice from calibre's list into `dir`. */
   download(key, dir, onProgress) {
     if (!this.proc) return Promise.reject(new Error("Piper is not running."));
-    if (this.downloads.has(key)) return this.downloads.get(key).promise;
-    const entry = { onProgress };
-    entry.promise = new Promise((resolve, reject) => {
-      entry.resolve = resolve;
-      entry.reject = reject;
+    const running = this.downloads.get(key);
+    if (running) return running.promise;
+    let settle;
+    const promise = new Promise((resolve, reject) => {
+      settle = { resolve, reject };
     });
+    if (!settle) throw new Error("unreachable");
+    const entry = { ...settle, promise, onProgress };
     this.downloads.set(key, entry);
     this.touch();
     this.send({ cmd: "download", key, dir: dir || void 0 });
@@ -533,7 +571,7 @@ ${stderr.trim()}`));
       this.downloads.delete(h.download);
       entry.resolve();
     } else if (entry.onProgress) {
-      entry.onProgress(h.done, h.total);
+      entry.onProgress(h.done ?? 0, h.total ?? 0);
     }
   }
   send(obj) {
@@ -554,14 +592,14 @@ ${stderr.trim()}`));
     this.send({ cmd: "cancel" });
   }
   touch() {
-    timers.clearTimeout(this.idleTimer);
-    this.idleTimer = timers.setTimeout(
+    this.timers.clearTimeout(this.idleTimer);
+    this.idleTimer = this.timers.setTimeout(
       () => this.isBusy() || this.downloads.size ? this.touch() : this.stop(),
       this.idleMs
     );
   }
   stop() {
-    timers.clearTimeout(this.idleTimer);
+    this.timers.clearTimeout(this.idleTimer);
     const proc = this.proc;
     if (!proc) return;
     proc.killedByUs = true;
@@ -570,21 +608,33 @@ ${stderr.trim()}`));
       proc.stdin.end();
     } catch {
     }
-    timers.setTimeout(() => {
+    this.timers.setTimeout(() => {
       if (proc.exitCode === null) proc.kill();
     }, 1e3);
   }
 };
+function parseHeader(line) {
+  let value;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const bytes = value.bytes;
+  if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) return null;
+  return value;
+}
 function toFloat32(pcm) {
   const samples = new Float32Array(pcm.length >> 1);
   for (let i = 0; i < samples.length; i++) samples[i] = pcm.readInt16LE(i * 2) / 32768;
   return samples;
 }
 
-// src/calibre.js
-var fs2 = __toESM(require("fs"), 1);
-var os = __toESM(require("os"), 1);
-var path2 = __toESM(require("path"), 1);
+// src/calibre.ts
+var fs2 = __toESM(require("fs"));
+var os = __toESM(require("os"));
+var path2 = __toESM(require("path"));
 var import_child_process2 = require("child_process");
 var FLATPAK_ID = "com.calibre_ebook.calibre";
 function candidates({ platform = process.platform, env = process.env, home = os.homedir() } = {}) {
@@ -631,7 +681,7 @@ function defaultExists(file) {
 }
 function configuredPath(typed, platform = process.platform, isDir = defaultIsDir) {
   let file = typed.trim().replace(/^["']+|["']+$/g, "").trim();
-  const join4 = platform === "win32" ? path2.win32.join : path2.posix.join;
+  const join4 = (...parts) => platform === "win32" ? path2.win32.join(...parts) : path2.posix.join(...parts);
   if (platform === "darwin" && /\.app\/?$/.test(file)) {
     file = join4(file, "Contents", "MacOS", "calibre-debug");
   } else if (isDir(file)) {
@@ -647,7 +697,7 @@ function defaultIsDir(file) {
   }
 }
 function findCalibre(configured, opts = {}) {
-  const exists = opts.exists || defaultExists;
+  const exists = opts.exists ?? defaultExists;
   if (configured && configured.trim()) {
     const file = configuredPath(configured, opts.platform, opts.isDir);
     return { file, command: file, args: [], label: file };
@@ -655,7 +705,7 @@ function findCalibre(configured, opts = {}) {
   return candidates(opts).find((c) => exists(c.file)) || null;
 }
 
-// src/voices.js
+// src/voices.ts
 var QUALITY_ORDER = ["medium", "high", "low", "x_low", ""];
 var languageNames = /* @__PURE__ */ new Map();
 function languageName(lang) {
@@ -668,7 +718,7 @@ function languageName(lang) {
     }
     languageNames.set(lang, name);
   }
-  return languageNames.get(lang);
+  return languageNames.get(lang) ?? lang;
 }
 function capitalize(s) {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -691,7 +741,7 @@ function preferredLanguage(voices, locales) {
   const langs = voices.map((v) => v.lang);
   for (const locale of locales) {
     const [language, country] = locale.split(/[-_]/);
-    const exact = country && langs.find((l) => l === `${language}_${country.toUpperCase()}`);
+    const exact = country !== void 0 && langs.find((l) => l === `${language}_${country.toUpperCase()}`);
     if (exact) return exact;
     const same = langs.find((l) => l.split("_")[0] === language);
     if (same) return same;
@@ -741,7 +791,7 @@ function sampleText(v) {
   return SAMPLES[language] || `${capitalize(v.name)}.`;
 }
 
-// src/highlight.js
+// src/highlight.ts
 var import_state = require("@codemirror/state");
 var import_view = require("@codemirror/view");
 var setReading = import_state.StateEffect.define();
@@ -910,12 +960,22 @@ def known_voices():
 
 
 def send_catalog(folder):
+    """Always answers, so a request never waits forever: on failure, with
+    an empty list and "catalogError"."""
+    try:
+        catalog, folder = make_catalog(folder)
+        send({"catalog": catalog, "dir": folder})
+    except Exception as e:
+        send({"catalog": [], "dir": folder or "",
+              "catalogError": "Could not list the voices: %s" % e})
+
+
+def make_catalog(folder):
     folder = folder or default_voices_dir()
     try:
         voices = known_voices()
     except Exception as e:
-        voices = {}
-        send({"error": "Could not read calibre's list of voices: %s" % e})
+        raise RuntimeError("could not read calibre's list of voices: %s" % e)
     try:
         files = set(os.listdir(folder))
     except OSError:
@@ -936,7 +996,7 @@ def send_catalog(folder):
                             "name": m.group(2) if m else key,
                             "quality": (m.group(3) or "") if m else "",
                             "installed": True})
-    send({"catalog": catalog, "dir": folder})
+    return catalog, folder
 
 
 def open_url(url):
@@ -980,9 +1040,10 @@ def download(key, folder):
         last = [-1]
 
         def report(done, total):
-            percent = int(100 * done / total) if total else 0
-            if percent != last[0]:
-                last[0] = percent
+            # Every percent, or every megabyte when the size is not known.
+            step = int(100 * done / total) if total else done // (1 << 20)
+            if step != last[0]:
+                last[0] = step
                 send({"download": key, "done": done, "total": total})
         fetch(voice["model_url"], model, report)
         send({"download": key, "finished": True})
@@ -1065,7 +1126,14 @@ if __name__ == "__main__":
         pass
 `;
 
-// src/main.js
+// src/main.ts
+function errorText(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function editorView(view) {
+  const editor = view.editor;
+  return editor?.cm ?? null;
+}
 var DEFAULT_SETTINGS = {
   calibreDebug: "",
   // empty: found automatically
@@ -1084,6 +1152,19 @@ function userLocales() {
   return list.filter(Boolean);
 }
 var ReadAloudPlugin = class extends import_obsidian.Plugin {
+  constructor() {
+    super(...arguments);
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.session = null;
+    this.audio = null;
+    this.nextTrackId = 1;
+    this.playhead = 0;
+    this.test = null;
+    this.foundCalibre = void 0;
+    this.lastCatalog = null;
+    this.sentenceCache = null;
+    this.previewWin = null;
+  }
   async onload() {
     await this.loadSettings();
     this.session = null;
@@ -1106,7 +1187,7 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
         if (!view) return false;
-        if (!checking) this.startInView(view, "cursor");
+        if (!checking) void this.startInView(view, "cursor");
         return true;
       }
     });
@@ -1116,7 +1197,7 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
         if (!view) return false;
-        if (!checking) this.startInView(view, "start");
+        if (!checking) void this.startInView(view, "start");
         return true;
       }
     });
@@ -1156,9 +1237,11 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       name: "Help",
       callback: () => new HelpModal(this.app, this).open()
     });
-    this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, view) => {
-      if (!(view instanceof import_obsidian.MarkdownView)) return;
-      menu.addItem((item) => item.setTitle("Read aloud from here").setIcon("volume-2").onClick(() => this.startInView(view, "cursor")));
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, _editor, info) => {
+      if (!(info instanceof import_obsidian.MarkdownView)) return;
+      menu.addItem((item) => item.setTitle("Read aloud from here").setIcon("volume-2").onClick(() => {
+        void this.startInView(info, "cursor");
+      }));
     }));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.checkView()));
     this.registerEvent(this.app.workspace.on("file-open", () => this.checkView()));
@@ -1167,12 +1250,17 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
   onunload() {
     this.stop();
     this.piper.stop();
-    if (this.audio) this.audio.close();
+    if (this.audio) void this.audio.close();
   }
   pluginDir() {
     const adapter = this.app.vault.adapter;
     const base = adapter instanceof import_obsidian.FileSystemAdapter ? adapter.getBasePath() : "";
-    return path3.join(base, this.manifest.dir);
+    return path3.join(base, this.manifest.dir ?? "");
+  }
+  /** The audio output, made on first use (and again if it was closed). */
+  audioContext() {
+    if (!this.audio || this.audio.state === "closed") this.audio = new AudioContext();
+    return this.audio;
   }
   // ------------------------------------------------------------ speech engine
   /**
@@ -1207,8 +1295,7 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
     this.stop();
     this.stopTest();
     const { dir } = await this.catalog();
-    if (!this.audio || this.audio.state === "closed") this.audio = new AudioContext();
-    this.audio.resume();
+    void this.audioContext().resume();
     const model = path3.join(dir, voice.key + ".onnx");
     this.test = { id: this.nextTrackId++, head: 0, sources: [], model };
     this.piper.setVoice(model, this.settings.speed);
@@ -1227,8 +1314,9 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
   }
   openSettings() {
     try {
-      this.app.setting.open();
-      this.app.setting.openTabById(this.manifest.id);
+      const setting = this.app.setting;
+      setting?.open();
+      setting?.openTabById(this.manifest.id);
     } catch {
     }
   }
@@ -1243,10 +1331,10 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("Open a note to read it aloud.");
       return;
     }
-    this.startInView(view, "cursor");
+    void this.startInView(view, "cursor");
   }
   async startInView(view, where) {
-    const cm = view.editor && view.editor.cm;
+    const cm = editorView(view);
     if (!cm) {
       new import_obsidian.Notice("This view cannot be read aloud.");
       return;
@@ -1264,17 +1352,25 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("There is nothing to read in this note.");
       return;
     }
-    const session = { view, cm, file: view.file, current: null, next: null, paused: false, loading: true };
+    const session = {
+      view,
+      cm,
+      file: view.file,
+      current: null,
+      next: null,
+      paused: false,
+      loading: true,
+      model: null
+    };
     this.session = session;
     this.updateStatus();
-    if (!this.audio || this.audio.state === "closed") this.audio = new AudioContext();
-    this.audio.resume();
+    void this.audioContext().resume();
     this.playhead = 0;
     try {
       session.model = await this.voiceModel();
     } catch (err) {
       if (this.session === session) this.stop();
-      new import_obsidian.Notice("Read Aloud could not start: " + err.message + "\n\nSee Settings \u2192 Read Aloud and the help there.", 15e3);
+      new import_obsidian.Notice("Read Aloud could not start: " + errorText(err) + "\n\nSee Settings \u2192 Read Aloud and the help there.", 15e3);
       console.error("Read Aloud:", err);
       return;
     }
@@ -1285,15 +1381,15 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       this.openSettings();
       return;
     }
-    this.play(seg);
+    this.play(session, seg);
   }
   /** In reading view, the note offset of the first section on screen. */
   previewTopOffset(view, cm) {
     try {
-      const renderer = view.previewMode.renderer;
+      const { renderer } = view.previewMode;
       const top = view.previewMode.containerEl.getBoundingClientRect().top;
       for (const s of renderer.sections) {
-        if (s.el && s.el.isConnected && s.el.getBoundingClientRect().bottom > top + 10) {
+        if (s.el.isConnected && s.el.getBoundingClientRect().bottom > top + 10) {
           return cm.state.doc.line(Math.min(s.lineStart + 1, cm.state.doc.lines)).from;
         }
       }
@@ -1301,29 +1397,36 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
     }
     return 0;
   }
-  // ------------------------------------------------------------ pieces
-  request(seg) {
-    const track = { id: this.nextTrackId++, seg, playing: false, done: false, pending: 0, queued: [] };
-    this.piper.setVoice(this.session.model, this.settings.speed);
+  // ------------------------------------------------------------ sentences
+  request(session, seg) {
+    const track = {
+      id: this.nextTrackId++,
+      seg,
+      playing: false,
+      done: false,
+      pending: 0,
+      queued: [],
+      sources: []
+    };
+    if (session.model) this.piper.setVoice(session.model, this.settings.speed);
     this.piper.speak(track.id, seg.text);
     return track;
   }
   /** Starts reading the sentence `seg`, using its audio if it was prepared. */
-  play(seg) {
-    const session = this.session;
+  play(session, seg) {
     let track = session.next;
     session.next = null;
     if (!track || track.seg.text !== seg.text) {
       if (track) this.piper.cancel();
-      track = this.request(seg);
+      track = this.request(session, seg);
     }
     track.seg = seg;
     track.playing = true;
     session.current = track;
-    this.highlight(seg);
+    this.highlight(session, seg);
     this.updateStatus();
-    const following = this.sentenceAfter(seg.to);
-    if (following) session.next = this.request(following);
+    const following = this.sentenceAfter(session, seg.to);
+    if (following) session.next = this.request(session, following);
     for (const chunk of track.queued) this.schedule(track, chunk);
     track.queued = [];
     this.checkFinished(track);
@@ -1332,22 +1435,22 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
    * The sentences of the note as it is now. A document state never changes,
    * so they are only worked out again after an edit.
    */
-  sentences() {
-    const doc = this.session.cm.state.doc;
+  sentences(session) {
+    const doc = session.cm.state.doc;
     const max = this.settings.maxLength;
     const cache = this.sentenceCache;
-    if (!cache || cache.doc !== doc || cache.max !== max) {
-      this.sentenceCache = { doc, max, sentences: segment(doc.toString(), { maxLength: max }) };
-    }
-    return this.sentenceCache.sentences;
+    if (cache && cache.doc === doc && cache.max === max) return cache.sentences;
+    const sentences = segment(doc.toString(), { maxLength: max });
+    this.sentenceCache = { doc, max, sentences };
+    return sentences;
   }
   /** The first sentence starting at or after `offset` in the note as it is now. */
-  sentenceAfter(offset) {
-    return this.sentences().find((p) => p.from >= offset) || null;
+  sentenceAfter(session, offset) {
+    return this.sentences(session).find((p) => p.from >= offset) ?? null;
   }
   onAudio(id, samples, rate, last) {
     if (this.test && this.test.id === id) {
-      this.playTest(samples, rate);
+      this.playTest(this.test, samples, rate);
       return;
     }
     const session = this.session;
@@ -1367,61 +1470,57 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
       track.queued.push(chunk);
     }
   }
-  schedule(track, { samples, rate }) {
-    if (!samples.length) return;
-    const ctx = this.audio;
+  /** Hands a piece of audio to the speakers, at `at` or right away. */
+  playChunk({ samples, rate }, at) {
+    const ctx = this.audioContext();
     const buffer = ctx.createBuffer(1, samples.length, rate);
     buffer.copyToChannel(samples, 0);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    const at = Math.max(ctx.currentTime + 0.03, this.playhead);
-    source.start(at);
-    this.playhead = at + buffer.duration;
+    source.start(Math.max(ctx.currentTime + 0.03, at));
+    return source;
+  }
+  schedule(track, chunk) {
+    if (!chunk.samples.length) return;
+    const at = Math.max(this.audioContext().currentTime + 0.03, this.playhead);
+    const source = this.playChunk(chunk, at);
+    this.playhead = at + chunk.samples.length / chunk.rate;
     if (track.startAt === void 0) track.startAt = at;
     track.pending++;
-    track.sources = track.sources || [];
     track.sources.push(source);
     source.onended = () => {
       track.pending--;
       this.checkFinished(track);
     };
   }
-  playTest(samples, rate) {
+  playTest(test, samples, rate) {
     if (!samples.length) return;
-    const ctx = this.audio;
-    const buffer = ctx.createBuffer(1, samples.length, rate);
-    buffer.copyToChannel(samples, 0);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    const at = Math.max(ctx.currentTime + 0.03, this.test.head);
-    source.start(at);
-    this.test.head = at + buffer.duration;
-    this.test.sources.push(source);
+    const at = Math.max(this.audioContext().currentTime + 0.03, test.head);
+    test.sources.push(this.playChunk({ samples, rate }, at));
+    test.head = at + samples.length / rate;
   }
   checkFinished(track) {
     const session = this.session;
     if (!session || session.current !== track || !track.done || track.pending > 0) return;
     if (track.finished) return;
     track.finished = true;
-    this.advance();
+    this.advance(session, track);
   }
-  advance() {
-    const session = this.session;
+  advance(session, track) {
     if (!this.viewAlive()) {
       this.stop();
       return;
     }
-    const range = readingRange(session.cm) || session.current.seg;
-    const seg = this.sentenceAfter(range.to);
+    const range = readingRange(session.cm) ?? track.seg;
+    const seg = this.sentenceAfter(session, range.to);
     if (!seg) {
       this.stop();
       return;
     }
     const newBlock = seg.block.from >= range.block.to;
-    this.playhead = this.audio.currentTime + (newBlock ? this.settings.paragraphPause / this.settings.speed : 0);
-    this.play(seg);
+    this.playhead = this.audioContext().currentTime + (newBlock ? this.settings.paragraphPause / this.settings.speed : 0);
+    this.play(session, seg);
   }
   /**
    * Jumps to the next (+1) or previous (-1) sentence or paragraph. Going back
@@ -1430,9 +1529,10 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
    */
   skip(direction, by = "sentence") {
     const session = this.session;
-    if (!session || !session.current) return;
-    const range = readingRange(session.cm) || session.current.seg;
-    const sentences = this.sentences();
+    const track = session?.current;
+    if (!session || !track) return;
+    const range = readingRange(session.cm) ?? track.seg;
+    const sentences = this.sentences(session);
     let target;
     if (by === "paragraph") {
       if (direction > 0) {
@@ -1445,39 +1545,36 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
     } else if (direction > 0) {
       target = sentences.find((p) => p.from >= range.to);
     } else {
-      const track = session.current;
-      const heard = track.startAt === void 0 ? 0 : this.audio.currentTime - track.startAt;
+      const heard = track.startAt === void 0 ? 0 : this.audioContext().currentTime - track.startAt;
       const before = sentences.filter((p) => p.to <= range.from);
       target = heard > 2 || !before.length ? sentences.find((p) => p.to > range.from) : before[before.length - 1];
     }
     if (!target) return;
-    this.silence();
+    this.silence(session);
     this.piper.cancel();
     session.next = null;
     this.playhead = 0;
     if (session.paused) {
       session.paused = false;
-      this.audio.resume();
+      void this.audioContext().resume();
     }
-    this.play(target);
+    this.play(session, target);
   }
   // ------------------------------------------------------------ pause / stop
   togglePause() {
     const session = this.session;
     if (!session || !session.current) return;
     session.paused = !session.paused;
-    if (session.paused) this.audio.suspend();
-    else this.audio.resume();
+    if (session.paused) void this.audioContext().suspend();
+    else void this.audioContext().resume();
     this.updateStatus();
   }
   /** Stops the sounds already handed to the speakers. */
-  silence() {
-    const session = this.session;
-    if (!session) return;
+  silence(session) {
     for (const track of [session.current, session.next]) {
       if (!track) continue;
       track.finished = true;
-      for (const s of track.sources || []) {
+      for (const s of track.sources) {
         s.onended = null;
         try {
           s.stop();
@@ -1489,10 +1586,10 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
   stop() {
     const session = this.session;
     if (!session) return;
-    this.silence();
+    this.silence(session);
     this.session = null;
     this.piper.cancel();
-    if (this.audio && session.paused) this.audio.resume();
+    if (this.audio && session.paused) void this.audio.resume();
     try {
       showReading(session.cm, null, false);
     } catch {
@@ -1514,10 +1611,10 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
     }
     const session = this.session;
     if (!session) return;
-    let fatal = info.crashed;
+    let fatal = info.crashed === true;
     if (info.id !== void 0) {
       if (session.next && session.next.id === info.id) session.next = null;
-      fatal = session.current && session.current.id === info.id;
+      fatal = session.current !== null && session.current.id === info.id;
     } else if (info.voiceFailed) {
       fatal = info.model === session.model;
     }
@@ -1527,47 +1624,47 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
   }
   viewAlive() {
     const s = this.session;
-    return s && s.cm.dom.isConnected && s.view.file === s.file;
+    return !!s && s.cm.dom.isConnected && s.view.file === s.file;
   }
   checkView() {
-    if (!this.session) return;
+    const session = this.session;
+    if (!session) return;
     if (!this.viewAlive()) this.stop();
-    else if (this.session.current) this.highlightPreview(this.session.current.seg, false);
+    else if (session.current) this.highlightPreview(session, session.current.seg, false);
   }
   // ------------------------------------------------------------ showing it
-  highlight(seg) {
-    const session = this.session;
+  highlight(session, seg) {
     showReading(session.cm, { from: seg.from, to: seg.to, block: seg.block }, this.settings.follow);
-    this.highlightPreview(seg, this.settings.follow);
+    this.highlightPreview(session, seg, this.settings.follow);
   }
   /**
    * In reading view, the editor's highlight is not visible, so the sentence
    * is found in the rendered text and marked with a CSS custom highlight,
    * which leaves the rendered page itself untouched.
    */
-  highlightPreview(seg, scroll) {
+  highlightPreview(session, seg, scroll) {
     this.clearPreviewHighlight();
-    const session = this.session;
-    if (!session || session.view.getMode() !== "preview") return;
+    if (session.view.getMode() !== "preview") return;
     try {
       const doc = session.cm.state.doc;
-      const range = readingRange(session.cm) || seg;
+      const range = readingRange(session.cm) ?? seg;
       const first = doc.lineAt(range.block.from).number - 1;
       const last = doc.lineAt(range.to).number - 1;
       const preview = session.view.previewMode;
-      const sections = preview.renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
+      const { renderer } = preview;
+      const sections = renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
       if (!sections.length) return;
       if (scroll && !sections[0].el.isConnected) preview.applyScroll(first);
       const page = sections[0].el.ownerDocument;
       const win = page.defaultView;
-      if (!win || !win.CSS || !win.CSS.highlights) return;
+      if (!win || !("highlights" in win.CSS)) return;
       const nodes = [];
       for (const s of sections) {
-        const walker = page.createTreeWalker(s.el, win.NodeFilter.SHOW_TEXT);
+        const walker = page.createTreeWalker(s.el, NodeFilter.SHOW_TEXT);
         for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
       }
       const hint = keyLength(speakable(doc.sliceString(doc.line(sections[0].lineStart + 1).from, range.from)));
-      const found = matchText(nodes.map((n) => n.nodeValue), seg.text, hint);
+      const found = matchText(nodes.map((n) => n.data), seg.text, hint);
       if (!found) return;
       const marked = page.createRange();
       marked.setStart(nodes[found.start[0]], found.start[1]);
@@ -1583,7 +1680,7 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
   }
   clearPreviewHighlight() {
     try {
-      if (this.previewWin) this.previewWin.CSS.highlights.delete("readaloud-current");
+      this.previewWin?.CSS.highlights.delete("readaloud-current");
     } catch {
     }
     this.previewWin = null;
@@ -1629,7 +1726,8 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
     }
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const saved = await this.loadData();
+    this.settings = { ...DEFAULT_SETTINGS, ...saved };
     if (this.settings.calibreDebug === "/opt/calibre/calibre-debug") this.settings.calibreDebug = "";
     if (this.settings.voicesDir === path3.join(os2.homedir(), ".cache", "calibre", "piper-voices")) {
       this.settings.voicesDir = "";
@@ -1651,18 +1749,21 @@ var ReadAloudPlugin = class extends import_obsidian.Plugin {
 var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
-    this.plugin = plugin;
+    // What the speech server told, plus the download section's choices.
     this.engine = { status: "checking" };
     this.needsCheck = true;
+    // look again when the tab is next shown
     this.downloadLang = null;
     this.downloadKey = null;
     this.downloading = null;
+    this.progressEl = null;
+    this.plugin = plugin;
   }
   /**
    * Asks the speech server about calibre and the voices, then redraws. What
    * was known stays on screen meanwhile, unless `fresh`.
    */
-  async check(fresh) {
+  async check(fresh = false) {
     if (fresh || this.engine.status !== "ok") {
       this.engine = { status: "checking" };
       this.update();
@@ -1670,9 +1771,10 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     let engine;
     try {
       const { voices: list, dir } = await this.plugin.catalog();
-      engine = { status: "ok", info: this.plugin.piper.info, voices: list, dir };
+      const info = this.plugin.piper.info ?? { calibre: "", voicesDir: dir };
+      engine = { status: "ok", info, voices: list, dir };
     } catch (err) {
-      engine = { status: "error", error: err.message };
+      engine = { status: "error", error: errorText(err) };
     }
     this.engine = engine;
     this.update();
@@ -1687,18 +1789,19 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     this.plugin.stop();
     this.plugin.piper.stop();
     this.plugin.forgetCalibre();
-    this.check(true);
+    void this.check(true);
   }
   getControlValue(key) {
     if (key === "voice" && this.engine.status === "ok") {
-      return chooseVoice(this.engine.voices, this.plugin.settings.voice, userLocales()) || "";
+      return chooseVoice(this.engine.voices, this.plugin.settings.voice, userLocales()) ?? "";
     }
     return super.getControlValue(key);
   }
   async setControlValue(key, value) {
-    this.plugin.settings[key] = typeof value === "string" ? value.trim() : value;
+    const settings = this.plugin.settings;
+    settings[key] = typeof value === "string" ? value.trim() : value;
     await this.plugin.saveSettings();
-    if (key === "voice") this.plugin.voiceChanged();
+    if (key === "voice") void this.plugin.voiceChanged();
     if (key === "calibreDebug") this.plugin.forgetCalibre();
   }
   getSettingDefinitions() {
@@ -1798,7 +1901,9 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
   renderEngine(setting) {
     if (this.needsCheck) {
       this.needsCheck = false;
-      window.setTimeout(() => this.check(), 0);
+      window.setTimeout(() => {
+        void this.check();
+      }, 0);
     }
     const e = this.engine;
     if (e.status === "checking") {
@@ -1863,7 +1968,7 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
         action: () => {
           const key = this.getControlValue("voice");
           const voice = installed.find((v) => v.key === key);
-          if (voice) this.plugin.testVoice(voice).catch((err) => new import_obsidian.Notice("Read Aloud: " + err.message));
+          if (voice) this.plugin.testVoice(voice).catch((err) => new import_obsidian.Notice("Read Aloud: " + errorText(err)));
         }
       },
       speed
@@ -1871,14 +1976,14 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
   }
   /** The voices of the language chosen for download, and that language. */
   downloadChoices() {
-    const all = this.engine.voices.filter((v) => v.lang);
+    const all = this.engine.status === "ok" ? this.engine.voices.filter((v) => v.lang) : [];
     const langs = languages(all);
     if (!this.downloadLang || !langs.some((l) => l.lang === this.downloadLang)) {
       this.downloadLang = preferredLanguage(all, userLocales());
     }
     const inLang = all.filter((v) => v.lang === this.downloadLang).sort(byLanguageThenName);
     if (!inLang.some((v) => v.key === this.downloadKey)) {
-      this.downloadKey = (inLang.find((v) => !v.installed) || inLang[0] || {}).key;
+      this.downloadKey = (inLang.find((v) => !v.installed) ?? inLang[0])?.key ?? null;
     }
     return { langs, inLang };
   }
@@ -1886,7 +1991,7 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     const { langs } = this.downloadChoices();
     setting.addDropdown((dd) => {
       for (const l of langs) dd.addOption(l.lang, l.label);
-      dd.setValue(this.downloadLang);
+      if (this.downloadLang) dd.setValue(this.downloadLang);
       dd.onChange((value) => {
         this.downloadLang = value;
         this.downloadKey = null;
@@ -1910,51 +2015,58 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
       });
     });
     setting.addButton((b) => {
-      b.setButtonText(chosen && chosen.installed ? "Download again" : "Download").setDisabled(!chosen || !!busy).onClick(() => this.download(chosen));
+      b.setButtonText(chosen && chosen.installed ? "Download again" : "Download").setDisabled(!chosen || !!busy).onClick(() => {
+        if (chosen) void this.download(chosen);
+      });
       if (chosen && !chosen.installed) b.setCta();
     });
   }
   async download(voice) {
     const settings = this.plugin.settings;
     const mb = (n) => (n / 1048576).toFixed(0);
-    this.downloading = { key: voice.key, text: "Starting the download\u2026" };
+    const downloading = { key: voice.key, text: "Starting the download\u2026" };
+    this.downloading = downloading;
     this.update();
     try {
       await this.plugin.startPiper();
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
-        this.downloading.text = total ? `Downloading\u2026 ${Math.floor(100 * done / total)}% of ${mb(total)} MB` : `Downloading\u2026 ${mb(done)} MB`;
-        if (this.progressEl && this.progressEl.isConnected) this.progressEl.setText(this.downloading.text);
+        downloading.text = total ? `Downloading\u2026 ${Math.floor(100 * done / total)}% of ${mb(total)} MB` : `Downloading\u2026 ${mb(done)} MB`;
+        if (this.progressEl && this.progressEl.isConnected) this.progressEl.setText(downloading.text);
       });
       settings.voice = voice.key;
       await this.plugin.saveSettings();
-      this.plugin.voiceChanged();
+      void this.plugin.voiceChanged();
       new import_obsidian.Notice(`Read Aloud: ${voiceLabel(voice)} is installed and selected.`);
     } catch (err) {
-      new import_obsidian.Notice(`Read Aloud: could not download ${voice.key}: ${err.message}`, 1e4);
+      new import_obsidian.Notice(`Read Aloud: could not download ${voice.key}: ${errorText(err)}`, 1e4);
     }
     this.downloading = null;
     await this.check();
   }
 };
 function validCalibrePath(value) {
-  if (!value || !value.trim() || process.env.FLATPAK_ID) return;
+  if (!value.trim() || process.env.FLATPAK_ID) return void 0;
   const found = findCalibre(value);
-  if (!fs3.existsSync(found.file)) return `There is no ${found.file}.`;
+  if (found && !fs3.existsSync(found.file)) return `There is no ${found.file}.`;
+  return void 0;
 }
 var HelpModal = class extends import_obsidian.Modal {
   constructor(app, plugin) {
     super(app);
+    this.component = null;
     this.plugin = plugin;
   }
   onOpen() {
     this.modalEl.addClass("readaloud-help");
     this.contentEl.empty();
-    this.component = new import_obsidian.Component();
-    this.component.load();
-    import_obsidian.MarkdownRenderer.render(this.app, HELP_default, this.contentEl, "", this.component);
+    const component = new import_obsidian.Component();
+    component.load();
+    this.component = component;
+    void import_obsidian.MarkdownRenderer.render(this.app, HELP_default, this.contentEl, "", component);
   }
   onClose() {
-    this.component.unload();
+    this.component?.unload();
+    this.component = null;
     this.contentEl.empty();
   }
 };

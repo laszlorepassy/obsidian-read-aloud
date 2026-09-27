@@ -5,15 +5,36 @@ import { spawnSync } from 'child_process';
 
 const FLATPAK_ID = 'com.calibre_ebook.calibre';
 
+/** A way to run calibre-debug. */
+export interface Calibre {
+  /** What must exist for this way to work. */
+  file: string;
+  command: string;
+  /** Arguments before `-e script`. */
+  args: string[];
+  /** Where the script must be, if not in the plugin's folder. */
+  scriptDir?: string;
+  /** How it is shown in the settings. */
+  label: string;
+}
+
+export interface FindOptions {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  home?: string;
+  exists?: (file: string) => boolean;
+  isDir?: (file: string) => boolean;
+}
+
 /**
  * Where calibre-debug is usually found on each system, in order of
  * preference. Each entry is a way to run it: the program, the arguments
  * before the script, and where the script must be written for that calibre
  * to see it.
  */
-function candidates({ platform = process.platform, env = process.env, home = os.homedir() } = {}) {
-  const direct = (file) => ({ file, command: file, args: [], label: file });
-  const list = [];
+function candidates({ platform = process.platform, env = process.env, home = os.homedir() }: FindOptions = {}): Calibre[] {
+  const direct = (file: string): Calibre => ({ file, command: file, args: [], label: file });
+  const list: Calibre[] = [];
   if (platform === 'win32') {
     for (const base of [env.ProgramFiles, env['ProgramFiles(x86)'], env.ProgramW6432,
       env.LOCALAPPDATA && path.win32.join(env.LOCALAPPDATA, 'Programs')]) {
@@ -43,7 +64,7 @@ function candidates({ platform = process.platform, env = process.env, home = os.
       });
     }
   }
-  const seen = new Set();
+  const seen = new Set<string>();
   return list.filter((c) => !seen.has(c.file) && seen.add(c.file));
 }
 
@@ -51,7 +72,7 @@ function candidates({ platform = process.platform, env = process.env, home = os.
  * Whether a file exists. Inside a Flatpak sandbox (Obsidian from Flathub)
  * the places calibre is installed to are not visible, so the host is asked.
  */
-function defaultExists(file) {
+function defaultExists(file: string): boolean {
   if (!process.env.FLATPAK_ID) return fs.existsSync(file);
   try {
     return spawnSync('flatpak-spawn', ['--host', 'test', '-e', file], { timeout: 5000 }).status === 0;
@@ -65,9 +86,9 @@ function defaultExists(file) {
  * copied on Windows comes in quotes, and a folder (Calibre2, calibre.app,
  * /opt/calibre) means the calibre-debug in it.
  */
-function configuredPath(typed, platform = process.platform, isDir = defaultIsDir) {
+function configuredPath(typed: string, platform: NodeJS.Platform = process.platform, isDir = defaultIsDir): string {
   let file = typed.trim().replace(/^["']+|["']+$/g, '').trim();
-  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  const join = (...parts: string[]) => (platform === 'win32' ? path.win32.join(...parts) : path.posix.join(...parts));
   if (platform === 'darwin' && /\.app\/?$/.test(file)) {
     file = join(file, 'Contents', 'MacOS', 'calibre-debug');
   } else if (isDir(file)) {
@@ -76,7 +97,7 @@ function configuredPath(typed, platform = process.platform, isDir = defaultIsDir
   return file;
 }
 
-function defaultIsDir(file) {
+function defaultIsDir(file: string): boolean {
   try {
     return fs.statSync(file).isDirectory();
   } catch {
@@ -88,8 +109,8 @@ function defaultIsDir(file) {
  * How to run calibre-debug: the path given in the settings if there is one,
  * else the first usual place where calibre is installed. Null if none.
  */
-function findCalibre(configured, opts = {}) {
-  const exists = opts.exists || defaultExists;
+function findCalibre(configured: string, opts: FindOptions = {}): Calibre | null {
+  const exists = opts.exists ?? defaultExists;
   if (configured && configured.trim()) {
     const file = configuredPath(configured, opts.platform, opts.isDir);
     return { file, command: file, args: [], label: file };

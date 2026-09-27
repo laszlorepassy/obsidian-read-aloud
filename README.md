@@ -55,7 +55,7 @@ to disclose:
   comments, embeds and link targets are skipped; Markdown syntax is not
   spoken.
 - calibre-debug is found in its usual place on each system
-  (`src/calibre.js`), including calibre from Flathub.
+  (`src/calibre.ts`), including calibre from Flathub.
 - A small speech server (`src/piper_server.py`) runs inside calibre's
   Python and keeps the voice loaded, so only the first start takes a few
   seconds. Reading starts about half a second after a sentence is sent,
@@ -87,9 +87,12 @@ to scroll along, and, optionally, where calibre and the voices are.
 
 ## Build and install
 
+The plugin is written in TypeScript (`src/`), bundled by esbuild into
+`main.js`.
+
 ```bash
 npm install
-npm test                          # Obsidian's lint rules (eslint-plugin-obsidianmd), then the tests
+npm test                          # type check, Obsidian's lint rules (eslint-plugin-obsidianmd), then the tests
 npm run lint                      # only the lint
 npm run install-plugin            # build, and copy into every vault open in Obsidian
 npm run install-plugin -- ~/path/to/vault
@@ -101,6 +104,22 @@ skipped otherwise.
 `main.js` is committed, so the plugin can be installed on any computer by
 copying `main.js`, `manifest.json` and `styles.css` into
 `<vault>/.obsidian/plugins/read-aloud/`, without building it.
+
+## Releasing
+
+Bump the version in `manifest.json`, `package.json` and `versions.json`,
+build, commit, then push a tag named exactly as the version:
+
+```bash
+git tag -a 1.0.1 -m "What changed"
+git push origin 1.0.1
+```
+
+The release workflow builds `main.js` from the tagged source, checks that
+it is the committed one, runs the checks, attests where the files came
+from (GitHub artifact attestations, which anyone can verify with
+`gh attestation verify main.js -R laszlorepassy/obsidian-read-aloud`), and
+publishes the release with `main.js`, `manifest.json` and `styles.css`.
 
 ## Support
 

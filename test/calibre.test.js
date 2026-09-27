@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { findCalibre, candidates } = require('../src/calibre');
+const { findCalibre, candidates } = require('../src/calibre.ts');
 
 const only = (...files) => (f) => files.includes(f);
 
@@ -47,7 +47,7 @@ test('nothing found', () => {
 });
 
 test('a typed path may be quoted, or a folder', () => {
-  const { configuredPath } = require('../src/calibre');
+  const { configuredPath } = require('../src/calibre.ts');
   const no = () => false;
   assert.strictEqual(configuredPath('"C:\\Calibre Portable\\Calibre\\calibre-debug.exe"', 'win32', no),
     'C:\\Calibre Portable\\Calibre\\calibre-debug.exe');

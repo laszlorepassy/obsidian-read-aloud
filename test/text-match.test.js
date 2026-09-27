@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { matchText, keyLength } = require('../src/text-match');
+const { matchText, keyLength } = require('../src/text-match.ts');
 
 const cut = (pieces, m) => {
   // The matched text, across pieces.
@@ -29,4 +29,15 @@ test('picks the repeated sentence nearest to the hint', () => {
 test('no match, or nothing to match', () => {
   assert.strictEqual(matchText(['abc'], 'xyz'), null);
   assert.strictEqual(matchText(['abc'], '...'), null);
+});
+
+test('letters whose lowercase is longer, and letters outside the BMP', () => {
+  const tr = ['İzmir güzel. ', 'Ankara başkent.'];
+  const m = matchText(tr, 'İzmir güzel.');
+  assert.strictEqual(cut(tr, m), 'İzmir güzel.');
+  const after = matchText(['İyi günler. ', 'Ankara başkent.'], 'Ankara başkent.', keyLength('İyi günler. '));
+  assert.deepStrictEqual(after.start, [1, 0]);
+  const cjk = ['前文。', '𠀀字在此。'];
+  const c = matchText(cjk, '𠀀字在此。');
+  assert.strictEqual(cut(cjk, c), '𠀀字在此。');
 });

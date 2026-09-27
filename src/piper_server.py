@@ -124,12 +124,22 @@ def known_voices():
 
 
 def send_catalog(folder):
+    """Always answers, so a request never waits forever: on failure, with
+    an empty list and "catalogError"."""
+    try:
+        catalog, folder = make_catalog(folder)
+        send({"catalog": catalog, "dir": folder})
+    except Exception as e:
+        send({"catalog": [], "dir": folder or "",
+              "catalogError": "Could not list the voices: %s" % e})
+
+
+def make_catalog(folder):
     folder = folder or default_voices_dir()
     try:
         voices = known_voices()
     except Exception as e:
-        voices = {}
-        send({"error": "Could not read calibre's list of voices: %s" % e})
+        raise RuntimeError("could not read calibre's list of voices: %s" % e)
     try:
         files = set(os.listdir(folder))
     except OSError:
@@ -150,7 +160,7 @@ def send_catalog(folder):
                             "name": m.group(2) if m else key,
                             "quality": (m.group(3) or "") if m else "",
                             "installed": True})
-    send({"catalog": catalog, "dir": folder})
+    return catalog, folder
 
 
 def open_url(url):
@@ -194,9 +204,10 @@ def download(key, folder):
         last = [-1]
 
         def report(done, total):
-            percent = int(100 * done / total) if total else 0
-            if percent != last[0]:
-                last[0] = percent
+            # Every percent, or every megabyte when the size is not known.
+            step = int(100 * done / total) if total else done // (1 << 20)
+            if step != last[0]:
+                last[0] = step
                 send({"download": key, "done": done, "total": total})
         fetch(voice["model_url"], model, report)
         send({"download": key, "finished": True})

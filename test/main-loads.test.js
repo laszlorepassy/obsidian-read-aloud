@@ -1,31 +1,24 @@
 'use strict';
 
-// The bundled main.js must load with only what Obsidian provides.
+// The bundled main.js must load with only what Obsidian provides, and the
+// committed one must be what the source builds to (as the release checks).
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
 const path = require('path');
-const Module = require('module');
-const { execFileSync } = require('child_process');
+const { root, build, loadBundle, obsidianStub } = require('./bundle');
 
 test('main.js builds and exports the plugin class', () => {
-  const root = path.join(__dirname, '..');
-  execFileSync(process.execPath, [path.join(root, 'build.js')]);
-  class Plugin {}
-  const obsidian = { Plugin, PluginSettingTab: class {}, Setting: class {}, Notice: class {},
-    MarkdownView: class {}, FileSystemAdapter: class {}, Modal: class {}, MarkdownRenderer: {}, Component: class {},
-    PluginSettingTab: class {},
-    setIcon() {}, setTooltip() {}, getLanguage: () => 'en' };
-  const load = Module._load;
-  Module._load = function (request, ...rest) {
-    if (request === 'obsidian') return obsidian;
-    return load.call(this, request, ...rest);
-  };
-  try {
-    const bundle = require(path.join(root, 'main.js'));
-    const ReadAloud = bundle.default || bundle;
-    assert.strictEqual(typeof ReadAloud, 'function');
-    assert.ok(ReadAloud.prototype instanceof Plugin);
-  } finally {
-    Module._load = load;
-  }
+  const obsidian = obsidianStub();
+  const bundle = loadBundle(obsidian);
+  const ReadAloud = bundle.default || bundle;
+  assert.strictEqual(typeof ReadAloud, 'function');
+  assert.ok(ReadAloud.prototype instanceof obsidian.Plugin);
+});
+
+test('the committed main.js is up to date with the source', () => {
+  const { code, dir } = build();
+  fs.rmSync(dir, { recursive: true, force: true });
+  const committed = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+  assert.ok(committed === code, 'main.js is out of date: run `npm run build`');
 });

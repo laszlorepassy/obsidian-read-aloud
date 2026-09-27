@@ -1,0 +1,56 @@
+# Publishes a release when a version tag (1.2.3, as in manifest.json) is
+# pushed: builds main.js from the tagged source, checks it is the committed
+# one, runs the checks, attests where the files came from (GitHub artifact
+# attestations), and attaches them to a GitHub release.
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write       # create the release
+  id-token: write       # sign the attestation
+  attestations: write   # store the attestation
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Check the tag, the manifest and the committed main.js agree
+        run: |
+          test "$(node -p "require('./manifest.json').version")" = "$GITHUB_REF_NAME"
+          test "$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+          node -e "if (!require('./versions.json')[process.argv[1]]) process.exit(1)" "$GITHUB_REF_NAME"
+          git diff --exit-code main.js
+
+      - name: Type check, Obsidian's lint rules and tests
+        run: npm test   # the tests that need calibre are skipped here
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
+            --title "$GITHUB_REF_NAME" \
+            --notes "$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$GITHUB_REF_NAME")"

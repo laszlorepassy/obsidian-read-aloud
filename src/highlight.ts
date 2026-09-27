@@ -1,5 +1,19 @@
 import { StateField, StateEffect } from '@codemirror/state';
+import type { ChangeDesc, StateEffect as Effect } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
+import type { DecorationSet } from '@codemirror/view';
+
+/** The sentence being read, and its paragraph, as source ranges. */
+export interface ReadingRange {
+  from: number;
+  to: number;
+  block: { from: number; to: number };
+}
+
+interface Reading {
+  range: ReadingRange | null;
+  deco: DecorationSet;
+}
 
 /**
  * The editor side of the highlight: one soft mark over the sentence being
@@ -8,20 +22,20 @@ import { Decoration, EditorView } from '@codemirror/view';
  * the plugin reads them back from there to know where the next sentence (or
  * paragraph) starts. Only the sentence is marked.
  */
-const setReading = StateEffect.define();
+const setReading = StateEffect.define<ReadingRange | null>();
 
 const mark = Decoration.mark({ class: 'readaloud-current' });
 
-function decorations(range) {
+function decorations(range: ReadingRange | null): DecorationSet {
   return range && range.from < range.to ? Decoration.set([mark.range(range.from, range.to)]) : Decoration.none;
 }
 
-function mapRange(changes, r) {
+function mapRange(changes: ChangeDesc, r: { from: number; to: number }): { from: number; to: number } {
   const from = changes.mapPos(r.from, 1);
   return { from, to: Math.max(from, changes.mapPos(r.to, -1)) };
 }
 
-const readingField = StateField.define({
+const readingField = StateField.define<Reading>({
   create: () => ({ range: null, deco: Decoration.none }),
   update(value, tr) {
     for (const e of tr.effects) {
@@ -43,20 +57,20 @@ const readingField = StateField.define({
  * Highlights the sentence { from, to, block: { from, to } } (null clears it),
  * scrolling it into view if asked.
  */
-function showReading(view, range, scroll) {
-  const effects = [setReading.of(range)];
+function showReading(view: EditorView, range: ReadingRange | null, scroll: boolean): void {
+  const effects: Effect<unknown>[] = [setReading.of(range)];
   if (range && scroll) effects.push(EditorView.scrollIntoView(range.from, { y: 'nearest', yMargin: 80 }));
   view.dispatch({ effects });
 }
 
 /** The highlighted sentence and block as they are now, after any edits, or null. */
-function readingRange(view) {
+function readingRange(view: EditorView): ReadingRange | null {
   const value = view.state.field(readingField, false);
   return value ? value.range : null;
 }
 
 /** The effect that sets the highlight, for the tests. */
-function setReadingForTest(range) {
+function setReadingForTest(range: ReadingRange | null): Effect<ReadingRange | null> {
   return setReading.of(range);
 }
 

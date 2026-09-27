@@ -4,12 +4,21 @@
  * installed: true }.
  */
 
+/** A voice in the list: calibre's, or one put in the voices folder by hand. */
+export interface Voice {
+  key: string;
+  lang: string;
+  name: string;
+  quality: string;
+  installed: boolean;
+}
+
 const QUALITY_ORDER = ['medium', 'high', 'low', 'x_low', ''];
 
-const languageNames = new Map();
+const languageNames = new Map<string, string>();
 
 /** "hu_HU" → "Hungarian (Hungary)", in English. */
-function languageName(lang) {
+function languageName(lang: string): string {
   if (!lang) return 'Other';
   if (!languageNames.has(lang)) {
     let name = lang;
@@ -18,32 +27,32 @@ function languageName(lang) {
     } catch { /* not a language code Intl knows */ }
     languageNames.set(lang, name);
   }
-  return languageNames.get(lang);
+  return languageNames.get(lang) ?? lang;
 }
 
-function capitalize(s) {
+function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
 /** "Anna (medium)" */
-function voiceName(v) {
+function voiceName(v: Pick<Voice, 'name' | 'quality'>): string {
   const name = capitalize(v.name.replace(/_/g, ' '));
   return v.quality ? `${name} (${v.quality.replace('_', ' ')})` : name;
 }
 
 /** "Hungarian (Hungary) – Anna (medium)" */
-function voiceLabel(v) {
+function voiceLabel(v: Voice): string {
   return `${languageName(v.lang)} – ${voiceName(v)}`;
 }
 
-function byLanguageThenName(a, b) {
+function byLanguageThenName(a: Voice, b: Voice): number {
   return languageName(a.lang).localeCompare(languageName(b.lang))
     || a.name.localeCompare(b.name)
     || QUALITY_ORDER.indexOf(a.quality) - QUALITY_ORDER.indexOf(b.quality);
 }
 
 /** The languages in the list, as [{ lang, label }], sorted by name. */
-function languages(voices) {
+function languages(voices: Voice[]): { lang: string; label: string }[] {
   const langs = [...new Set(voices.map((v) => v.lang))];
   return langs.map((lang) => ({ lang, label: languageName(lang) }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -54,11 +63,11 @@ function languages(voices) {
  * ['hu-HU', 'en-US']): the same language and country, else the same
  * language, else English, else the first one.
  */
-function preferredLanguage(voices, locales) {
+function preferredLanguage(voices: Voice[], locales: string[]): string | null {
   const langs = voices.map((v) => v.lang);
   for (const locale of locales) {
     const [language, country] = locale.split(/[-_]/);
-    const exact = country && langs.find((l) => l === `${language}_${country.toUpperCase()}`);
+    const exact = country !== undefined && langs.find((l) => l === `${language}_${country.toUpperCase()}`);
     if (exact) return exact;
     const same = langs.find((l) => l.split('_')[0] === language);
     if (same) return same;
@@ -70,7 +79,7 @@ function preferredLanguage(voices, locales) {
  * The voice to read with: the chosen one if it is installed, else an
  * installed voice in the user's language, else any installed voice.
  */
-function chooseVoice(voices, chosen, locales) {
+function chooseVoice(voices: Voice[], chosen: string, locales: string[]): string | null {
   const installed = voices.filter((v) => v.installed);
   if (installed.some((v) => v.key === chosen)) return chosen;
   if (!installed.length) return null;
@@ -79,7 +88,7 @@ function chooseVoice(voices, chosen, locales) {
   return (fitting[0] || installed[0]).key;
 }
 
-const SAMPLES = {
+const SAMPLES: Record<string, string> = {
   ar: 'مرحبا، هذا هو صوتي.',
   ca: 'Hola, així sona aquesta veu.',
   cs: 'Dobrý den, takto zní tento hlas.',
@@ -111,7 +120,7 @@ const SAMPLES = {
 };
 
 /** A short sentence to try a voice with, in its language. */
-function sampleText(v) {
+function sampleText(v: Voice): string {
   const language = (v.lang || '').split('_')[0];
   return SAMPLES[language] || `${capitalize(v.name)}.`;
 }

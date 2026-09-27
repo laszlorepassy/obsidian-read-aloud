@@ -24,9 +24,24 @@ const TABLE_ROW = /^\s*\|/;
 const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 
+/** A paragraph, heading, list item… as a source range after its Markdown prefix. */
+export interface Block {
+  from: number;
+  to: number;
+  kind: 'heading' | 'table' | 'callout' | 'quote' | 'item' | 'paragraph';
+}
+
+/** A sentence: its source range, what is spoken, and its block's range. */
+export interface Sentence {
+  from: number;
+  to: number;
+  text: string;
+  block: { from: number; to: number };
+}
+
 /** Splits text into lines with their start offsets. */
-function lines(text) {
-  const result = [];
+function lines(text: string): { start: number; end: number; text: string }[] {
+  const result: { start: number; end: number; text: string }[] = [];
   let start = 0;
   while (start <= text.length) {
     let end = text.indexOf('\n', start);
@@ -38,7 +53,7 @@ function lines(text) {
 }
 
 /** Length of the YAML front matter at the start of a note, if any. */
-function frontMatterEnd(text) {
+function frontMatterEnd(text: string): number {
   const m = /^---\r?\n[\s\S]*?\r?\n(---|\.\.\.)[ \t]*(\r?\n|$)/.exec(text);
   return m ? m[0].length : 0;
 }
@@ -47,17 +62,18 @@ function frontMatterEnd(text) {
  * The note's blocks: paragraphs, headings, list items, quote paragraphs and
  * table rows, as source ranges starting after their Markdown prefix.
  */
-function blocks(text) {
-  const result = [];
-  let current = null;
-  let skipUntil = null;           // closing line of a code/math/comment block
+function blocks(text: string): Block[] {
+  const result: Block[] = [];
+  // The block being read; in an object, as the helpers below change it.
+  const state: { current: Block | null } = { current: null };
+  let skipUntil: RegExp | null = null;           // closing line of a code/math/comment block
   const close = () => {
-    if (current) result.push(current);
-    current = null;
+    if (state.current) result.push(state.current);
+    state.current = null;
   };
-  const open = (from, to, kind) => {
+  const open = (from: number, to: number, kind: Block['kind']) => {
     close();
-    current = { from, to, kind };
+    state.current = { from, to, kind };
   };
 
   const bodyStart = frontMatterEnd(text);
@@ -81,7 +97,7 @@ function blocks(text) {
 
     if (!t.trim() || RULE.test(t) || /^\s*(?:>\s?)+$/.test(t)) { close(); continue; }
 
-    let m;
+    let m: RegExpExecArray | null;
     if ((m = HEADING.exec(t))) {
       open(line.start + m[1].length, line.end, 'heading');
       close();
@@ -95,12 +111,12 @@ function blocks(text) {
       const rest = t.slice(m[1].length);
       const item = LIST_ITEM.exec(rest);
       const prefix = m[1].length + (item ? item[1].length : 0);
-      if (current && current.kind === 'quote' && !item) current.to = line.end;
+      if (state.current && state.current.kind === 'quote' && !item) state.current.to = line.end;
       else open(line.start + prefix, line.end, 'quote');
     } else if ((m = LIST_ITEM.exec(t))) {
       open(line.start + m[1].length, line.end, 'item');
-    } else if (current && current.kind !== 'quote') {
-      current.to = line.end;      // a paragraph or list item going on
+    } else if (state.current && state.current.kind !== 'quote') {
+      state.current.to = line.end;      // a paragraph or list item going on
     } else {
       open(line.start + (t.length - t.trimStart().length), line.end, 'paragraph');
     }
@@ -109,10 +125,10 @@ function blocks(text) {
   return result;
 }
 
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…' };
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…' };
 
 /** Turns a piece of Markdown source into the words that are spoken. */
-function speakable(source) {
+function speakable(source: string): string {
   let s = source;
   s = s.replace(/^\[\^[^\]]*\]:\s*/, '');                         // footnote definition
   s = s.replace(/\s+#+\s*$/, '');                                 // closing #s of a heading
@@ -121,8 +137,8 @@ function speakable(source) {
   s = s.replace(/!\[\[[^\]]*\]\]/g, ' ');                      // embeds
   s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');                 // images
   s = s.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2');          // [[note|alias]]
-  s = s.replace(/\[\[([^\]]*)\]\]/g, (_, target) =>            // [[note#heading]]
-    target.replace(/#\^.*$/, '').replace(/#/g, ' ').split('/').pop());
+  s = s.replace(/\[\[([^\]]*)\]\]/g, (_: string, target: string) =>            // [[note#heading]]
+    target.replace(/#\^.*$/, '').replace(/#/g, ' ').split('/').pop() ?? '');
   s = s.replace(/\[\^[^\]]*\]/g, '');                          // footnote marks
   s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');               // [text](url)
   s = s.replace(/<https?:[^>]*>/g, ' ');
@@ -139,7 +155,7 @@ function speakable(source) {
   s = s.replace(/(^|[^\w*])\*(?=\S)|(\S)\*(?=[^\w*]|$)/g, '$1$2');
   s = s.replace(/(^|[^\p{L}\p{N}_])_(?=\S)|(\S)_(?=[^\p{L}\p{N}_]|$)/gu, '$1$2');
   s = s.replace(/(^|\s)#([\p{L}\p{N}_/-]+)/gu, '$1$2');         // #tags
-  s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {       // HTML entities
+  s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m: string, e: string) => {       // HTML entities
     if (e[0] !== '#') return ENTITIES[e.toLowerCase()] || m;
     const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
     try { return String.fromCodePoint(code); } catch { return ' '; }
@@ -163,14 +179,14 @@ const UNCUTTABLE = [
   /`[^`]*`/g, /\$[^$\n]+\$/g, /<[^>\n]*>/g, /\bhttps?:\/\/\S+/g,
 ];
 
-function mask(text) {
+function mask(text: string): string {
   let masked = text;
   for (const re of UNCUTTABLE) masked = masked.replace(re, (m) => 'X'.repeat(m.length));
   return masked;
 }
 
 /** Whether `text` ends in a number standing on its own, as in "2026" or "3". */
-function endsInNumber(text) {
+function endsInNumber(text: string): boolean {
   let i = text.length;
   while (i > 0 && text.charCodeAt(i - 1) >= 48 && text.charCodeAt(i - 1) <= 57) i--;
   return i < text.length && (i === 0 || /\s/.test(text[i - 1]));
@@ -182,10 +198,10 @@ function endsInNumber(text) {
  * ("pl. a", "stb. is") does not end a sentence. Chinese and Japanese full
  * stops need no space after them.
  */
-function sentenceStarts(text) {
-  const starts = [];
+function sentenceStarts(text: string): number[] {
+  const starts: number[] = [];
   const re = /[.!?…]+["'”’»)\]]*\s+|[。！？．]+["'”’」』)]*\s*/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const next = m.index + m[0].length;
     if (next >= text.length) break;
@@ -199,10 +215,10 @@ function sentenceStarts(text) {
 }
 
 /** Offsets where a too long sentence may be cut: after , ; : or a dash. */
-function clauseStarts(text) {
-  const starts = [];
+function clauseStarts(text: string): number[] {
+  const starts: number[] = [];
   const re = /(?:[,;:]|\s[–—-])\s+|[，、；：]\s*/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const next = m.index + m[0].length;
     if (next < text.length) starts.push(next);
@@ -210,10 +226,10 @@ function clauseStarts(text) {
   return starts;
 }
 
-function wordStarts(text) {
-  const starts = [];
+function wordStarts(text: string): number[] {
+  const starts: number[] = [];
   const re = /\s+/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const next = m.index + m[0].length;
     if (next < text.length && m.index > 0) starts.push(next);
@@ -222,8 +238,8 @@ function wordStarts(text) {
 }
 
 /** Every `max` characters, for text without any spaces (Chinese, Japanese). */
-function hardStarts(text, max) {
-  const starts = [];
+function hardStarts(text: string, max: number): number[] {
+  const starts: number[] = [];
   for (let i = max; i < text.length; i += max) starts.push(i);
   return starts;
 }
@@ -233,15 +249,15 @@ function hardStarts(text, max) {
  * preferring sentence ends, then clause ends, then spaces, and only then
  * anywhere outside links and the like. `masked` is `mask(text)`.
  */
-function cut(text, max, masked = mask(text)) {
+function cut(text: string, max: number, masked = mask(text)): [number, number][] {
   if (text.length <= max) return [[0, text.length]];
-  const finders = [sentenceStarts, clauseStarts, wordStarts, (t) => hardStarts(t, max)];
+  const finders = [sentenceStarts, clauseStarts, wordStarts, (t: string) => hardStarts(t, max)];
   for (const finder of finders) {
     const points = finder(masked).filter((i) => masked[i - 1] !== 'X' || masked[i] !== 'X'
       || finder !== finders[3]);
     if (!points.length) continue;
     const bounds = [0, ...points, text.length];
-    const pieces = [];
+    const pieces: [number, number][] = [];
     let start = 0;
     for (let i = 1; i < bounds.length; i++) {
       // Close the piece before a bound that would make it too long.
@@ -252,7 +268,7 @@ function cut(text, max, masked = mask(text)) {
     }
     pieces.push([start, text.length]);
     // A piece still too long (one huge sentence) is cut again, more finely.
-    const result = [];
+    const result: [number, number][] = [];
     for (const [a, b] of pieces) {
       if (b - a > max && finder !== finders[3]) {
         for (const [c, d] of cut(text.slice(a, b), max, masked.slice(a, b))) result.push([a + c, a + d]);
@@ -272,8 +288,8 @@ function cut(text, max, masked = mask(text)) {
  * paragraph (heading, list item…) it belongs to. A sentence longer than
  * `maxLength` characters is cut at commas, or else between words.
  */
-function segment(source, { maxLength = 300 } = {}) {
-  const result = [];
+function segment(source: string, { maxLength = 300 }: { maxLength?: number } = {}): Sentence[] {
+  const result: Sentence[] = [];
   for (const b of blocks(source)) {
     const body = source.slice(b.from, b.to);
     const masked = mask(body);

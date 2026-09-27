@@ -13,7 +13,10 @@ const voice = fs.existsSync(VOICES) && fs.readdirSync(VOICES).find((f) => f.ends
 
 // esbuild bundles the server script as text; here it is read from its file.
 const serverSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'piper_server.py'), 'utf8');
-const { PiperClient } = require('../src/piper-client');
+const { PiperClient } = require('../src/piper-client.ts');
+
+// Obsidian's window timers stand-in: Node's, with numeric handles.
+const timers = { setTimeout: (handler, ms) => Number(setTimeout(handler, ms)), clearTimeout: (id) => clearTimeout(id) };
 
 test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const chunks = [];
@@ -22,6 +25,7 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
   const client = new PiperClient({
     serverSource,
+    timers,
     scriptDir: dir,
     onAudio: (id, samples, rate, last) => {
       chunks.push({ id, n: samples.length, rate, last });
@@ -57,7 +61,7 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
 test('a server killed from outside is reported, and waiting requests fail', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const errors = [];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: (e) => errors.push(e) });
+  const client = new PiperClient({ serverSource, timers, scriptDir: dir, onAudio: () => {}, onError: (e) => errors.push(e) });
   try {
     await client.start({ command: CALIBRE, args: [] });
     const proc = client.proc;
@@ -77,7 +81,7 @@ test('a server killed from outside is reported, and waiting requests fail', { sk
 
 test('stopping one server does not fail requests to the next one', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  const client = new PiperClient({ serverSource, timers, scriptDir: dir, onAudio: () => {}, onError: () => {} });
   try {
     await client.start({ command: CALIBRE, args: [] });
     client.stop();                      // like "Check again"
@@ -92,7 +96,7 @@ test('stopping one server does not fail requests to the next one', { skip: !(fs.
 
 test('stopping while starting leaves no stray server', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  const client = new PiperClient({ serverSource, timers, scriptDir: dir, onAudio: () => {}, onError: () => {} });
   try {
     const first = client.start({ command: CALIBRE, args: [] });
     const firstProc = client.proc;
@@ -105,6 +109,21 @@ test('stopping while starting leaves no stray server', { skip: !(fs.existsSync(C
     // A bad request is answered with an error, and the server keeps working.
     client.proc.stdin.write('[1, 2]\n');
     const { voices } = await client.catalog();
+    assert.ok(voices.length > 100);
+  } finally {
+    client.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failing voice list is answered with an error, not silence', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
+  const client = new PiperClient({ serverSource, timers, scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  try {
+    await client.start({ command: CALIBRE, args: [] });
+    // A folder name with a NUL byte makes os.listdir raise ValueError.
+    await assert.rejects(client.catalog('bad\u0000folder'), /Could not list the voices/);
+    const { voices } = await client.catalog();   // and it keeps working
     assert.ok(voices.length > 100);
   } finally {
     client.stop();

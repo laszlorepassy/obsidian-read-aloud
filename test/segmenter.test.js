@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { segment, speakable } = require('../src/segmenter');
+const { segment, speakable } = require('../src/segmenter.ts');
 
 const texts = (src, opts) => segment(src, opts).map((s) => s.text);
 
