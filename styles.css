@@ -17,6 +17,27 @@
   transition: background-color 250ms ease;
 }
 
+/* Status bar controls: label, pause/resume and stop. */
 .readaloud-status {
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: default;
+}
+
+.readaloud-status-label {
+  margin-right: 4px;
+}
+
+.readaloud-status-button {
+  padding: 2px;
+}
+
+.readaloud-status-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.readaloud-help {
+  width: min(720px, 92vw);
 }

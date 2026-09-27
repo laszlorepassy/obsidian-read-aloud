@@ -5,8 +5,8 @@ An Obsidian plugin that reads the current note aloud with a local
 with a soft highlight on the part being read.
 
 Nothing leaves the computer. The Piper built into calibre does the speaking,
-with the Hungarian voices calibre downloaded (anna, berta, imre), so there is
-nothing else to install.
+with the voices calibre downloaded (here the Hungarian anna, berta and imre),
+so there is nothing else to install.
 
 ## How it works
 
@@ -29,14 +29,16 @@ nothing else to install.
 
 - **Ribbon icon** (speaker): starts reading from the cursor; while
   reading, it pauses and resumes.
-- **Right-click in the editor → Felolvasás innen** (read from here).
-- **Commands** (to bind hotkeys to): *Felolvasás a kurzortól* (read from
-  cursor), *Jegyzet felolvasása az elejétől* (read note from start),
-  *Szünet / folytatás* (pause/resume), *Felolvasás leállítása* (stop),
-  *Következő bekezdés* / *Előző bekezdés* (next/previous paragraph).
-- The **status bar** shows that reading is on; click it to pause.
+- **Right-click in the editor → Read aloud from here.**
+- **Commands** (to bind hotkeys to): *Read from cursor*, *Read note from
+  the start*, *Pause / resume*, *Stop reading*, *Next paragraph*,
+  *Previous paragraph*, *Help*.
+- The **status bar** shows pause/resume and stop buttons while reading.
 
 In reading view, reading starts at the top of the screen.
+
+The user guide is in [HELP.md](HELP.md); inside Obsidian it opens with the
+*Help* command and from the settings page.
 
 Settings: voice, speed, maximum piece length, pause between paragraphs,
 whether to scroll along, and where calibre and the voices are.

@@ -40,7 +40,7 @@ class PiperClient {
     if (this.ready) return this.ready;
     this.ready = new Promise((resolve, reject) => {
       if (!fs.existsSync(calibreDebug)) {
-        reject(new Error(`Nem található a calibre: ${calibreDebug}`));
+        reject(new Error(`calibre not found: ${calibreDebug}`));
         return;
       }
       const proc = spawn(calibreDebug, ['-e', this.scriptPath()], {
@@ -84,9 +84,9 @@ class PiperClient {
       proc.on('exit', (code) => {
         this.forget(proc);
         if (!started) {
-          reject(new Error(`A Piper nem indult el (kilépési kód: ${code}).\n${stderr.trim()}`));
+          reject(new Error(`Piper did not start (exit code ${code}).\n${stderr.trim()}`));
         } else if (code && code !== 0 && !proc.killedByUs) {
-          this.onError(new Error(`A Piper leállt (kilépési kód: ${code}).\n${stderr.trim()}`));
+          this.onError(new Error(`Piper stopped (exit code ${code}).\n${stderr.trim()}`));
         }
       });
     });

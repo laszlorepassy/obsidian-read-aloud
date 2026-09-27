@@ -1,12 +1,16 @@
 'use strict';
 
-const { Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter } = require('obsidian');
+const {
+  Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
+  setIcon, setTooltip,
+} = require('obsidian');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { segment } = require('./segmenter');
 const { PiperClient } = require('./piper-client');
 const { readingField, showReading, readingRange } = require('./highlight');
+const HELP = require('../HELP.md');
 
 const DEFAULT_SETTINGS = {
   calibreDebug: '/opt/calibre/calibre-debug',
@@ -51,15 +55,13 @@ class ReadAloudPlugin extends Plugin {
 
     this.registerEditorExtension(readingField);
 
-    this.ribbon = this.addRibbonIcon('volume-2', 'Felolvasás / szünet', () => this.toggle());
-    this.status = this.addStatusBarItem();
-    this.status.addClass('readaloud-status');
-    this.status.addEventListener('click', () => this.togglePause());
+    this.ribbon = this.addRibbonIcon('volume-2', 'Read aloud / pause', () => this.toggle());
+    this.buildStatus();
     this.updateStatus();
 
     this.addCommand({
       id: 'read-from-cursor',
-      name: 'Felolvasás a kurzortól',
+      name: 'Read from cursor',
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) return false;
@@ -69,7 +71,7 @@ class ReadAloudPlugin extends Plugin {
     });
     this.addCommand({
       id: 'read-note',
-      name: 'Jegyzet felolvasása az elejétől',
+      name: 'Read note from the start',
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) return false;
@@ -79,7 +81,7 @@ class ReadAloudPlugin extends Plugin {
     });
     this.addCommand({
       id: 'pause-resume',
-      name: 'Szünet / folytatás',
+      name: 'Pause / resume',
       checkCallback: (checking) => {
         if (!this.session) return false;
         if (!checking) this.togglePause();
@@ -88,7 +90,7 @@ class ReadAloudPlugin extends Plugin {
     });
     this.addCommand({
       id: 'stop',
-      name: 'Felolvasás leállítása',
+      name: 'Stop reading',
       checkCallback: (checking) => {
         if (!this.session) return false;
         if (!checking) this.stop();
@@ -97,7 +99,7 @@ class ReadAloudPlugin extends Plugin {
     });
     this.addCommand({
       id: 'next',
-      name: 'Következő bekezdés',
+      name: 'Next paragraph',
       checkCallback: (checking) => {
         if (!this.session) return false;
         if (!checking) this.skip(1);
@@ -106,7 +108,7 @@ class ReadAloudPlugin extends Plugin {
     });
     this.addCommand({
       id: 'previous',
-      name: 'Előző bekezdés',
+      name: 'Previous paragraph',
       checkCallback: (checking) => {
         if (!this.session) return false;
         if (!checking) this.skip(-1);
@@ -114,10 +116,16 @@ class ReadAloudPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'help',
+      name: 'Help',
+      callback: () => new HelpModal(this.app, this).open(),
+    });
+
     this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor, view) => {
       if (!(view instanceof MarkdownView)) return;
       menu.addItem((item) => item
-        .setTitle('Felolvasás innen')
+        .setTitle('Read aloud from here')
         .setIcon('volume-2')
         .onClick(() => this.startInView(view, 'cursor')));
     }));
@@ -156,7 +164,7 @@ class ReadAloudPlugin extends Plugin {
     }
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
-      new Notice('Nyiss meg egy jegyzetet a felolvasáshoz.');
+      new Notice('Open a note to read it aloud.');
       return;
     }
     this.startInView(view, 'cursor');
@@ -165,7 +173,7 @@ class ReadAloudPlugin extends Plugin {
   async startInView(view, where) {
     const cm = view.editor && view.editor.cm;
     if (!cm) {
-      new Notice('Ezt a nézetet nem tudom felolvasni.');
+      new Notice('This view cannot be read aloud.');
       return;
     }
     let offset = 0;
@@ -176,14 +184,14 @@ class ReadAloudPlugin extends Plugin {
     let seg = pieces.find((p) => p.to > offset);
     if (!seg && where === 'cursor') seg = pieces[0];
     if (!seg) {
-      new Notice('Nincs felolvasható szöveg ebben a jegyzetben.');
+      new Notice('There is nothing to read in this note.');
       return;
     }
 
     this.stop();
     const model = this.voiceModel();
     if (!model) {
-      new Notice(`Nem találok Piper hangot itt: ${this.settings.voicesDir}`);
+      new Notice(`No Piper voice found in ${this.settings.voicesDir}`);
       return;
     }
     // `loading` lasts until the first sound: starting calibre and loading the
@@ -200,7 +208,7 @@ class ReadAloudPlugin extends Plugin {
       await this.piper.start(this.settings.calibreDebug);
     } catch (err) {
       if (this.session === session) this.stop();
-      new Notice('A felolvasó nem indult el: ' + err.message, 10000);
+      new Notice('Read Aloud could not start: ' + err.message, 10000);
       console.error('Read Aloud:', err);
       return;
     }
@@ -391,7 +399,7 @@ class ReadAloudPlugin extends Plugin {
       if (session.next && session.next.id === id) session.next = null;
       return;
     }
-    new Notice('Felolvasási hiba: ' + err.message, 8000);
+    new Notice('Read Aloud error: ' + err.message, 8000);
     this.stop();
   }
 
@@ -442,18 +450,40 @@ class ReadAloudPlugin extends Plugin {
     this.previewEl = null;
   }
 
+  /**
+   * The controls in the status bar: a label and pause/stop buttons. They are
+   * built once and only updated, each button with its own tooltip, so a
+   * tooltip always points at the button under the mouse.
+   */
+  buildStatus() {
+    this.status = this.addStatusBarItem();
+    this.status.addClass('readaloud-status');
+    this.statusLabel = this.status.createSpan({ cls: 'readaloud-status-label' });
+    const button = (onClick) => {
+      const el = this.status.createDiv({ cls: 'readaloud-status-button clickable-icon' });
+      el.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      return el;
+    };
+    this.pauseButton = button(() => this.togglePause());
+    this.stopButton = button(() => this.stop());
+    setIcon(this.stopButton, 'square');
+    setTooltip(this.stopButton, 'Stop', { placement: 'top' });
+  }
+
   updateStatus() {
     const s = this.session;
-    this.status.empty();
-    this.status.toggleClass('readaloud-active', !!s);
     if (!s) {
       this.status.hide();
       return;
     }
     this.status.show();
-    if (s.loading) this.status.setText('Felolvasás indul…');
-    else this.status.setText(s.paused ? '⏸ Szünet' : '🔊 Felolvasás');
-    this.status.setAttr('aria-label', s.paused ? 'Folytatás' : 'Szünet');
+    this.statusLabel.setText(s.loading ? 'Starting…' : (s.paused ? 'Paused' : 'Reading'));
+    const icon = s.paused ? 'play' : 'pause';
+    if (this.pauseButton.dataset.icon !== icon) {
+      this.pauseButton.dataset.icon = icon;
+      setIcon(this.pauseButton, icon);
+      setTooltip(this.pauseButton, s.paused ? 'Resume' : 'Pause', { placement: 'top' });
+    }
   }
 
   async loadSettings() {
@@ -478,9 +508,16 @@ class ReadAloudSettingTab extends PluginSettingTab {
 
     const voices = listVoices(settings.voicesDir);
     new Setting(containerEl)
-      .setName('Hang')
-      .setDesc(voices.length ? 'A Piper hangja, amellyel a jegyzet felolvasásra kerül.'
-        : `Nincs Piper hang a megadott mappában.`)
+      .setName('User guide')
+      .setDesc('How to start, control and set up reading aloud.')
+      .addButton((b) => b
+        .setButtonText('Open help')
+        .onClick(() => new HelpModal(this.app, this.plugin).open()));
+
+    new Setting(containerEl)
+      .setName('Voice')
+      .setDesc(voices.length ? 'The Piper voice that reads the note.'
+        : 'No Piper voice in the voices folder below.')
       .addDropdown((dd) => {
         for (const v of voices) dd.addOption(v, voiceLabel(v));
         dd.setValue(voices.includes(settings.voice) ? settings.voice : (voices[0] || ''));
@@ -491,8 +528,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Sebesség')
-      .setDesc('1 = a hang saját tempója. Változtatáskor a hang újratöltődik (néhány másodperc).')
+      .setName('Speed')
+      .setDesc('1 is the voice\'s own pace. Changing it reloads the voice (a few seconds).')
       .addSlider((sl) => sl
         .setLimits(0.6, 2, 0.05)
         .setValue(settings.speed)
@@ -503,8 +540,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Legfeljebb ennyi karakter egyszerre')
-      .setDesc('A hosszabb bekezdéseket mondathatáron ekkora darabokra vágja.')
+      .setName('Maximum characters at a time')
+      .setDesc('Longer paragraphs are cut into pieces of this size, between sentences.')
       .addSlider((sl) => sl
         .setLimits(120, 800, 20)
         .setValue(settings.maxLength)
@@ -515,7 +552,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Szünet a bekezdések között (mp)')
+      .setName('Pause between paragraphs (seconds)')
       .addSlider((sl) => sl
         .setLimits(0, 2, 0.1)
         .setValue(settings.paragraphPause)
@@ -526,8 +563,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Görgetés a felolvasott részhez')
-      .setDesc('A kiemelt bekezdés mindig látható marad.')
+      .setName('Scroll along')
+      .setDesc('Keep the highlighted paragraph in view.')
       .addToggle((t) => t
         .setValue(settings.follow)
         .onChange(async (value) => {
@@ -535,11 +572,11 @@ class ReadAloudSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl).setName('Speciális').setHeading();
+    new Setting(containerEl).setName('Advanced').setHeading();
 
     new Setting(containerEl)
-      .setName('calibre-debug elérési útja')
-      .setDesc('A Piper a calibre-be épített változata.')
+      .setName('Path of calibre-debug')
+      .setDesc('Read Aloud uses the Piper built into calibre.')
       .addText((t) => t
         .setPlaceholder(DEFAULT_SETTINGS.calibreDebug)
         .setValue(settings.calibreDebug)
@@ -550,8 +587,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Hangok mappája')
-      .setDesc('Ahol a Piper .onnx és .onnx.json fájljai vannak.')
+      .setName('Voices folder')
+      .setDesc('Where the Piper .onnx and .onnx.json files are.')
       .addText((t) => t
         .setPlaceholder(DEFAULT_SETTINGS.voicesDir)
         .setValue(settings.voicesDir)
@@ -559,6 +596,23 @@ class ReadAloudSettingTab extends PluginSettingTab {
           settings.voicesDir = value.trim() || DEFAULT_SETTINGS.voicesDir;
           await this.plugin.saveSettings();
         }));
+  }
+}
+
+class HelpModal extends Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('readaloud-help');
+    this.contentEl.empty();
+    MarkdownRenderer.render(this.app, HELP, this.contentEl, '', this.plugin);
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 

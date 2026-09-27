@@ -12,7 +12,8 @@ test('main.js builds and exports the plugin class', () => {
   execFileSync(process.execPath, [path.join(root, 'build.js')]);
   class Plugin {}
   const obsidian = { Plugin, PluginSettingTab: class {}, Setting: class {}, Notice: class {},
-    MarkdownView: class {}, FileSystemAdapter: class {} };
+    MarkdownView: class {}, FileSystemAdapter: class {}, Modal: class {}, MarkdownRenderer: {},
+    setIcon() {}, setTooltip() {} };
   const load = Module._load;
   Module._load = function (request, ...rest) {
     if (request === 'obsidian') return obsidian;
