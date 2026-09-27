@@ -1,6 +1,6 @@
 {
   "name": "obsidian-readaloud",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Read notes aloud sentence by sentence with a natural Piper voice that runs on your computer (through calibre), highlighting the sentence being read.",
   "main": "main.js",
   "scripts": {
