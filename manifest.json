@@ -1,0 +1,10 @@
+{
+  "id": "read-aloud",
+  "name": "Read Aloud",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Reads the current note aloud with a local Piper voice, paragraph by paragraph, softly highlighting the part being read.",
+  "author": "Laszlo Repassy",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

@@ -1,0 +1,22 @@
+/* The piece being read: a soft wash of the accent color, just enough to find
+   your place again when you look back at the screen. */
+.readaloud-current {
+  background-color: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Reading view: the rendered block holding the piece. */
+.readaloud-current-block {
+  background-color: color-mix(in srgb, var(--interactive-accent) 11%, transparent);
+  box-shadow: -10px 0 0 color-mix(in srgb, var(--interactive-accent) 11%, transparent),
+              10px 0 0 color-mix(in srgb, var(--interactive-accent) 11%, transparent);
+  border-radius: 6px;
+  transition: background-color 250ms ease;
+}
+
+.readaloud-status {
+  cursor: pointer;
+}

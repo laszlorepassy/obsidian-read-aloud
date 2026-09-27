@@ -1,0 +1,5 @@
+node_modules/
+data.json
+/main.js
+/piper_server.py
+.DS_Store
