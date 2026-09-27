@@ -155,20 +155,46 @@ function speakable(source) {
 }
 
 /**
+ * `text` with the spans that must never be cut (comments, links, embeds,
+ * inline code and math, HTML tags, URLs) filled with "X" of the same length,
+ * so the offsets found in it are the offsets in `text`, and no sentence end,
+ * comma or space inside those spans counts.
+ */
+const UNCUTTABLE = [
+  /%%[\s\S]*?%%/g, /<!--[\s\S]*?-->/g, /!?\[\[[^\]]*\]\]/g, /!?\[[^\]]*\]\([^)]*\)/g,
+  /`[^`]*`/g, /\$[^$\n]+\$/g, /<[^>\n]*>/g, /\bhttps?:\/\/\S+/g,
+];
+
+function mask(text) {
+  let masked = text;
+  for (const re of UNCUTTABLE) masked = masked.replace(re, (m) => 'X'.repeat(m.length));
+  return masked;
+}
+
+/** Whether `text` ends in a number standing on its own, as in "2026" or "3". */
+function endsInNumber(text) {
+  let i = text.length;
+  while (i > 0 && text.charCodeAt(i - 1) >= 48 && text.charCodeAt(i - 1) <= 57) i--;
+  return i < text.length && (i === 0 || /\s/.test(text[i - 1]));
+}
+
+/**
  * Offsets inside `text` where a new sentence starts. A full stop after a
  * number ("2026. szeptember", "3. fejezet") or before a lowercase word
- * ("pl. a", "stb. is") does not end a sentence.
+ * ("pl. a", "stb. is") does not end a sentence. Chinese and Japanese full
+ * stops need no space after them.
  */
 function sentenceStarts(text) {
   const starts = [];
-  const re = /[.!?…]+["'”’»)\]]*\s+/g;
+  const re = /[.!?…]+["'”’»)\]]*\s+|[。！？．]+["'”’」』)]*\s*/g;
   let m;
   while ((m = re.exec(text))) {
     const next = m.index + m[0].length;
     if (next >= text.length) break;
-    const before = text.slice(0, m.index);
-    if (m[0][0] === '.' && /(^|\s)\d+$/.test(before)) continue;
-    if (/^\p{Ll}/u.test(text.slice(next))) continue;
+    if (/^[.!?…]/.test(m[0])) {
+      if (m[0][0] === '.' && endsInNumber(text.slice(Math.max(0, m.index - 40), m.index))) continue;
+      if (/^\p{Ll}/u.test(text.slice(next, next + 2))) continue;
+    }
     starts.push(next);
   }
   return starts;
@@ -177,7 +203,7 @@ function sentenceStarts(text) {
 /** Offsets where a too long sentence may be cut: after , ; : or a dash. */
 function clauseStarts(text) {
   const starts = [];
-  const re = /(?:[,;:]|\s[–—-])\s+/g;
+  const re = /(?:[,;:]|\s[–—-])\s+|[，、；：]\s*/g;
   let m;
   while ((m = re.exec(text))) {
     const next = m.index + m[0].length;
@@ -197,14 +223,24 @@ function wordStarts(text) {
   return starts;
 }
 
+/** Every `max` characters, for text without any spaces (Chinese, Japanese). */
+function hardStarts(text, max) {
+  const starts = [];
+  for (let i = max; i < text.length; i += max) starts.push(i);
+  return starts;
+}
+
 /**
  * Cuts [0, text.length) into ranges of at most `max` characters where it can,
- * preferring sentence ends, then clause ends, then spaces.
+ * preferring sentence ends, then clause ends, then spaces, and only then
+ * anywhere outside links and the like. `masked` is `mask(text)`.
  */
-function cut(text, max) {
+function cut(text, max, masked = mask(text)) {
   if (text.length <= max) return [[0, text.length]];
-  for (const finder of [sentenceStarts, clauseStarts, wordStarts]) {
-    const points = finder(text);
+  const finders = [sentenceStarts, clauseStarts, wordStarts, (t) => hardStarts(t, max)];
+  for (const finder of finders) {
+    const points = finder(masked).filter((i) => masked[i - 1] !== 'X' || masked[i] !== 'X'
+      || finder !== finders[3]);
     if (!points.length) continue;
     const bounds = [0, ...points, text.length];
     const pieces = [];
@@ -220,8 +256,8 @@ function cut(text, max) {
     // A piece still too long (one huge sentence) is cut again, more finely.
     const result = [];
     for (const [a, b] of pieces) {
-      if (b - a > max && finder !== wordStarts) {
-        for (const [c, d] of cut(text.slice(a, b), max)) result.push([a + c, a + d]);
+      if (b - a > max && finder !== finders[3]) {
+        for (const [c, d] of cut(text.slice(a, b), max, masked.slice(a, b))) result.push([a + c, a + d]);
       } else {
         result.push([a, b]);
       }
@@ -242,11 +278,12 @@ function segment(source, { maxLength = 300 } = {}) {
   const result = [];
   for (const b of blocks(source)) {
     const body = source.slice(b.from, b.to);
+    const masked = mask(body);
     const block = { from: b.from, to: b.from + body.trimEnd().length };
-    const bounds = [0, ...sentenceStarts(body), body.length];
+    const bounds = [0, ...sentenceStarts(masked), body.length];
     for (let i = 1; i < bounds.length; i++) {
       const start = bounds[i - 1];
-      for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength)) {
+      for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength, masked.slice(start, bounds[i]))) {
         const piece = body.slice(start + x, start + y);
         const text = speakable(piece);
         if (!text) continue;

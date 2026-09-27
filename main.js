@@ -148,23 +148,44 @@ var require_segmenter = __commonJS({
       s = s.replace(/\s+/g, " ").trim();
       return /[\p{L}\p{N}]/u.test(s) ? s : "";
     }
+    var UNCUTTABLE = [
+      /%%[\s\S]*?%%/g,
+      /<!--[\s\S]*?-->/g,
+      /!?\[\[[^\]]*\]\]/g,
+      /!?\[[^\]]*\]\([^)]*\)/g,
+      /`[^`]*`/g,
+      /\$[^$\n]+\$/g,
+      /<[^>\n]*>/g,
+      /\bhttps?:\/\/\S+/g
+    ];
+    function mask(text) {
+      let masked = text;
+      for (const re of UNCUTTABLE) masked = masked.replace(re, (m) => "X".repeat(m.length));
+      return masked;
+    }
+    function endsInNumber(text) {
+      let i = text.length;
+      while (i > 0 && text.charCodeAt(i - 1) >= 48 && text.charCodeAt(i - 1) <= 57) i--;
+      return i < text.length && (i === 0 || /\s/.test(text[i - 1]));
+    }
     function sentenceStarts(text) {
       const starts = [];
-      const re = /[.!?…]+["'”’»)\]]*\s+/g;
+      const re = /[.!?…]+["'”’»)\]]*\s+|[。！？．]+["'”’」』)]*\s*/g;
       let m;
       while (m = re.exec(text)) {
         const next = m.index + m[0].length;
         if (next >= text.length) break;
-        const before = text.slice(0, m.index);
-        if (m[0][0] === "." && /(^|\s)\d+$/.test(before)) continue;
-        if (/^\p{Ll}/u.test(text.slice(next))) continue;
+        if (/^[.!?…]/.test(m[0])) {
+          if (m[0][0] === "." && endsInNumber(text.slice(Math.max(0, m.index - 40), m.index))) continue;
+          if (/^\p{Ll}/u.test(text.slice(next, next + 2))) continue;
+        }
         starts.push(next);
       }
       return starts;
     }
     function clauseStarts(text) {
       const starts = [];
-      const re = /(?:[,;:]|\s[–—-])\s+/g;
+      const re = /(?:[,;:]|\s[–—-])\s+|[，、；：]\s*/g;
       let m;
       while (m = re.exec(text)) {
         const next = m.index + m[0].length;
@@ -182,10 +203,16 @@ var require_segmenter = __commonJS({
       }
       return starts;
     }
-    function cut(text, max) {
+    function hardStarts(text, max) {
+      const starts = [];
+      for (let i = max; i < text.length; i += max) starts.push(i);
+      return starts;
+    }
+    function cut(text, max, masked = mask(text)) {
       if (text.length <= max) return [[0, text.length]];
-      for (const finder of [sentenceStarts, clauseStarts, wordStarts]) {
-        const points = finder(text);
+      const finders = [sentenceStarts, clauseStarts, wordStarts, (t) => hardStarts(t, max)];
+      for (const finder of finders) {
+        const points = finder(masked).filter((i) => masked[i - 1] !== "X" || masked[i] !== "X" || finder !== finders[3]);
         if (!points.length) continue;
         const bounds = [0, ...points, text.length];
         const pieces = [];
@@ -199,8 +226,8 @@ var require_segmenter = __commonJS({
         pieces.push([start, text.length]);
         const result = [];
         for (const [a, b] of pieces) {
-          if (b - a > max && finder !== wordStarts) {
-            for (const [c, d] of cut(text.slice(a, b), max)) result.push([a + c, a + d]);
+          if (b - a > max && finder !== finders[3]) {
+            for (const [c, d] of cut(text.slice(a, b), max, masked.slice(a, b))) result.push([a + c, a + d]);
           } else {
             result.push([a, b]);
           }
@@ -213,11 +240,12 @@ var require_segmenter = __commonJS({
       const result = [];
       for (const b of blocks(source)) {
         const body = source.slice(b.from, b.to);
+        const masked = mask(body);
         const block = { from: b.from, to: b.from + body.trimEnd().length };
-        const bounds = [0, ...sentenceStarts(body), body.length];
+        const bounds = [0, ...sentenceStarts(masked), body.length];
         for (let i = 1; i < bounds.length; i++) {
           const start = bounds[i - 1];
-          for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength)) {
+          for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength, masked.slice(start, bounds[i]))) {
             const piece = body.slice(start + x, start + y);
             const text = speakable(piece);
             if (!text) continue;
@@ -312,7 +340,24 @@ FIXED_SHARE = 0.3
 SENTENCE_PAUSE = 0.25
 QUALITIES = ("x_low", "low", "medium", "high")
 
-out = sys.stdout.buffer
+
+def private_stdout():
+    """
+    The frames get stdout to themselves: anything else printed there (by
+    calibre, Piper, espeak or onnxruntime, from Python or C) would land
+    between a header and its audio and garble both. fd 1 is duplicated for
+    the frames, and fd 1 itself then goes to stderr.
+    """
+    fd = os.dup(1)
+    if sys.platform == "win32":
+        import msvcrt
+        msvcrt.setmode(fd, os.O_BINARY)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return os.fdopen(fd, "wb")
+
+
+out = private_stdout()
 out_lock = threading.Lock()
 requests = queue.Queue()
 generation = 0          # bumped by every cancel; older speak requests are dropped
@@ -328,24 +373,27 @@ def send(header, pcm=b""):
 
 def read_stdin():
     global generation
-    for line in sys.stdin.buffer:
-        try:
-            req = json.loads(line)
-        except ValueError:
-            continue
-        cmd = req.get("cmd")
-        if cmd == "cancel":
-            generation += 1
-        elif cmd == "catalog":
-            send_catalog(req.get("dir"))
-            continue
-        elif cmd == "download":
-            threading.Thread(target=download, args=(req["key"], req.get("dir")),
-                             daemon=True).start()
-            continue
-        req["generation"] = generation
-        requests.put(req)
-    requests.put(None)  # Obsidian went away
+    try:
+        for line in sys.stdin.buffer:
+            try:
+                req = json.loads(line)
+                cmd = req.get("cmd")
+                if cmd == "cancel":
+                    generation += 1
+                elif cmd == "catalog":
+                    send_catalog(req.get("dir"))
+                    continue
+                elif cmd == "download":
+                    threading.Thread(target=download,
+                                     args=(req["key"], req.get("dir")),
+                                     daemon=True).start()
+                    continue
+                req["generation"] = generation
+                requests.put(req)
+            except Exception as e:
+                send({"error": "Bad request: %s" % e})
+    finally:
+        requests.put(None)  # Obsidian went away, or reading failed
 
 
 def length_multiplier(speed):
@@ -499,7 +547,8 @@ def main():
             except Exception as e:
                 loaded = None
                 send({"error": "Could not load the voice %s: %s"
-                      % (wanted[0], e), "voiceFailed": True})
+                      % (wanted[0], e), "voiceFailed": True,
+                      "model": wanted[0]})
         elif cmd == "speak":
             speak(engine, req, loaded)
 
@@ -578,7 +627,7 @@ var require_piper_client = __commonJS({
        */
       start(calibre) {
         if (this.ready) return this.ready;
-        this.ready = new Promise((resolve, reject) => {
+        const ready = new Promise((resolve, reject) => {
           if (!calibre) {
             reject(new Error("calibre was not found. Install calibre 8.8 or newer, or set the path of calibre-debug in the settings."));
             return;
@@ -601,6 +650,9 @@ var require_piper_client = __commonJS({
           let header = null;
           let stderr = "";
           let started = false;
+          this.startReject = (err) => {
+            if (!started) reject(err);
+          };
           proc.stdin.on("error", () => {
           });
           const timeout = setTimeout(() => {
@@ -610,6 +662,7 @@ ${stderr.trim()}`));
             this.stop();
           }, this.startMs);
           proc.stdout.on("data", (data) => {
+            if (this.proc !== proc) return;
             buffer = buffer.length ? Buffer.concat([buffer, data]) : data;
             for (; ; ) {
               if (!header) {
@@ -623,6 +676,10 @@ ${stderr.trim()}`));
                 try {
                   header = JSON.parse(line);
                 } catch (e) {
+                  continue;
+                }
+                if (!header || !Number.isInteger(header.bytes) || header.bytes < 0) {
+                  header = null;
                   continue;
                 }
               }
@@ -652,7 +709,7 @@ ${stderr.trim()}`));
                 continue;
               }
               if (h.error) {
-                this.onError(new Error(h.error), h.id);
+                this.onError(new Error(h.error), h);
                 continue;
               }
               if (h.id === void 0) continue;
@@ -677,14 +734,15 @@ ${stderr.trim()}`);
               reject(new Error(`Piper did not start (${how}).
 ${stderr.trim()}`));
             } else if (!proc.killedByUs) {
-              this.onError(gone);
+              this.onError(gone, { crashed: true });
             }
           });
         });
-        this.ready.catch(() => {
-          this.ready = null;
+        this.ready = ready;
+        ready.catch(() => {
+          if (this.ready === ready) this.ready = null;
         });
-        return this.ready;
+        return ready;
       }
       /**
        * Lets go of a server that stopped or is being stopped, failing what was
@@ -697,12 +755,15 @@ ${stderr.trim()}`));
         this.voiceKey = null;
         this.info = null;
         const err = why || new Error("Piper was stopped.");
+        if (this.startReject) this.startReject(err);
+        this.startReject = null;
         for (const w of this.catalogWaiters.splice(0)) w.reject(err);
         for (const d of this.downloads.values()) d.reject(err);
         this.downloads.clear();
       }
       /** The voices calibre knows, with `installed` set for those in `dir`. */
       catalog(dir) {
+        this.touch();
         return new Promise((resolve, reject) => {
           if (!this.proc) {
             reject(new Error("Piper is not running."));
@@ -843,14 +904,32 @@ var require_calibre = __commonJS({
         return false;
       }
     }
+    function configuredPath(typed, platform = process.platform, isDir = defaultIsDir) {
+      let file = typed.trim().replace(/^["']+|["']+$/g, "").trim();
+      const join = platform === "win32" ? path2.win32.join : path2.posix.join;
+      if (platform === "darwin" && /\.app\/?$/.test(file)) {
+        file = join(file, "Contents", "MacOS", "calibre-debug");
+      } else if (isDir(file)) {
+        file = join(file, platform === "win32" ? "calibre-debug.exe" : "calibre-debug");
+      }
+      return file;
+    }
+    function defaultIsDir(file) {
+      try {
+        return fs.statSync(file).isDirectory();
+      } catch (e) {
+        return false;
+      }
+    }
     function findCalibre2(configured, opts = {}) {
       const exists = opts.exists || defaultExists;
-      if (configured) {
-        return { file: configured, command: configured, args: [], label: configured };
+      if (configured && configured.trim()) {
+        const file = configuredPath(configured, opts.platform, opts.isDir);
+        return { file, command: file, args: [], label: file };
       }
       return candidates(opts).find((c) => exists(c.file)) || null;
     }
-    module2.exports = { findCalibre: findCalibre2, candidates };
+    module2.exports = { findCalibre: findCalibre2, candidates, configuredPath };
   }
 });
 
@@ -1064,7 +1143,7 @@ var ReadAloudPlugin = class extends Plugin {
     this.piper = new PiperClient({
       scriptDir: this.pluginDir(),
       onAudio: (id, samples, rate, last) => this.onAudio(id, samples, rate, last),
-      onError: (err, id) => this.onPiperError(err, id),
+      onError: (err, info) => this.onPiperError(err, info),
       isBusy: () => !!this.session
     });
     this.registerEditorExtension(readingField);
@@ -1146,9 +1225,20 @@ var ReadAloudPlugin = class extends Plugin {
     return path.join(base, this.manifest.dir);
   }
   // ------------------------------------------------------------ speech engine
+  /**
+   * How to run calibre, looked up once: in a Flatpak sandbox every look asks
+   * the host. `forgetCalibre` makes the next start look again.
+   */
+  calibre() {
+    if (this.foundCalibre === void 0) this.foundCalibre = findCalibre(this.settings.calibreDebug);
+    return this.foundCalibre;
+  }
+  forgetCalibre() {
+    this.foundCalibre = void 0;
+  }
   /** Starts the speech server if needed; resolves with its "ready" message. */
   startPiper() {
-    return this.piper.start(findCalibre(this.settings.calibreDebug));
+    return this.piper.ready || this.piper.start(this.calibre());
   }
   /** The voices calibre knows, marked installed or not; starts the server. */
   async catalog() {
@@ -1166,12 +1256,12 @@ var ReadAloudPlugin = class extends Plugin {
   async testVoice(voice) {
     this.stop();
     this.stopTest();
-    await this.startPiper();
-    const { dir } = this.lastCatalog || await this.catalog();
+    const { dir } = await this.catalog();
     if (!this.audio || this.audio.state === "closed") this.audio = new AudioContext();
     this.audio.resume();
-    this.test = { id: this.nextTrackId++, head: 0, sources: [] };
-    this.piper.setVoice(path.join(dir, voice.key + ".onnx"), this.settings.speed);
+    const model = path.join(dir, voice.key + ".onnx");
+    this.test = { id: this.nextTrackId++, head: 0, sources: [], model };
+    this.piper.setVoice(model, this.settings.speed);
     this.piper.speak(this.test.id, voices.sampleText(voice));
   }
   stopTest() {
@@ -1215,6 +1305,8 @@ var ReadAloudPlugin = class extends Plugin {
     if (where === "cursor") {
       offset = view.getMode() === "preview" ? this.previewTopOffset(view, cm) : cm.state.selection.main.head;
     }
+    this.stop();
+    this.stopTest();
     const sentences = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
     let seg = sentences.find((p) => p.to > offset);
     if (!seg && where === "cursor") seg = sentences[0];
@@ -1222,8 +1314,6 @@ var ReadAloudPlugin = class extends Plugin {
       new Notice("There is nothing to read in this note.");
       return;
     }
-    this.stop();
-    this.stopTest();
     const session = { view, cm, file: view.file, current: null, next: null, paused: false, loading: true };
     this.session = session;
     this.updateStatus();
@@ -1288,9 +1378,18 @@ var ReadAloudPlugin = class extends Plugin {
     track.queued = [];
     this.checkFinished(track);
   }
-  /** The sentences of the note as it is now. */
+  /**
+   * The sentences of the note as it is now. A document state never changes,
+   * so they are only worked out again after an edit.
+   */
   sentences() {
-    return segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    const doc = this.session.cm.state.doc;
+    const max = this.settings.maxLength;
+    const cache = this.sentenceCache;
+    if (!cache || cache.doc !== doc || cache.max !== max) {
+      this.sentenceCache = { doc, max, sentences: segment(doc.toString(), { maxLength: max }) };
+    }
+    return this.sentenceCache.sentences;
   }
   /** The first sentence starting at or after `offset` in the note as it is now. */
   sentenceAfter(offset) {
@@ -1451,14 +1550,28 @@ var ReadAloudPlugin = class extends Plugin {
     this.clearPreviewHighlight();
     this.updateStatus();
   }
-  onPiperError(err, id) {
+  /**
+   * An error from the speech server. Reading stops only for what breaks it:
+   * the server crashing, the sentence being read failing, or the voice it
+   * reads with failing to load. A voice tried in the settings says so.
+   */
+  onPiperError(err, info = {}) {
     console.error("Read Aloud:", err);
+    const test = this.test;
+    if (test && (info.id !== void 0 && info.id === test.id || info.voiceFailed && info.model === test.model || info.crashed)) {
+      this.test = null;
+      new Notice("Read Aloud: " + err.message, 1e4);
+    }
     const session = this.session;
     if (!session) return;
-    if (id !== void 0 && !(session.current && session.current.id === id)) {
-      if (session.next && session.next.id === id) session.next = null;
-      return;
+    let fatal = info.crashed;
+    if (info.id !== void 0) {
+      if (session.next && session.next.id === info.id) session.next = null;
+      fatal = session.current && session.current.id === info.id;
+    } else if (info.voiceFailed) {
+      fatal = info.model === session.model;
     }
+    if (!fatal) return;
     new Notice("Read Aloud error: " + err.message, 8e3);
     this.stop();
   }
@@ -1485,7 +1598,7 @@ var ReadAloudPlugin = class extends Plugin {
   highlightPreview(seg, scroll) {
     this.clearPreviewHighlight();
     const session = this.session;
-    if (!session || session.view.getMode() !== "preview" || !window.CSS || !CSS.highlights) return;
+    if (!session || session.view.getMode() !== "preview") return;
     try {
       const doc = session.cm.state.doc;
       const range = readingRange(session.cm) || seg;
@@ -1495,18 +1608,22 @@ var ReadAloudPlugin = class extends Plugin {
       const sections = preview.renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
       if (!sections.length) return;
       if (scroll && !sections[0].el.isConnected) preview.applyScroll(first);
+      const page = sections[0].el.ownerDocument;
+      const win = page.defaultView;
+      if (!win || !win.CSS || !win.CSS.highlights) return;
       const nodes = [];
       for (const s of sections) {
-        const walker = document.createTreeWalker(s.el, NodeFilter.SHOW_TEXT);
+        const walker = page.createTreeWalker(s.el, win.NodeFilter.SHOW_TEXT);
         for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
       }
-      const hint = keyLength(segmentText(doc.sliceString(sections[0].lineStart === first ? range.block.from : doc.line(sections[0].lineStart + 1).from, range.from)));
+      const hint = keyLength(segmentText(doc.sliceString(doc.line(sections[0].lineStart + 1).from, range.from)));
       const found = matchText(nodes.map((n) => n.nodeValue), seg.text, hint);
       if (!found) return;
-      const marked = document.createRange();
+      const marked = page.createRange();
       marked.setStart(nodes[found.start[0]], found.start[1]);
       marked.setEnd(nodes[found.end[0]], found.end[1]);
-      CSS.highlights.set("readaloud-current", new Highlight(marked));
+      win.CSS.highlights.set("readaloud-current", new win.Highlight(marked));
+      this.previewWin = win;
       if (scroll) {
         const el = marked.startContainer.parentElement;
         if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -1516,9 +1633,10 @@ var ReadAloudPlugin = class extends Plugin {
   }
   clearPreviewHighlight() {
     try {
-      CSS.highlights.delete("readaloud-current");
+      if (this.previewWin) this.previewWin.CSS.highlights.delete("readaloud-current");
     } catch (e) {
     }
+    this.previewWin = null;
   }
   /**
    * The controls in the status bar: a label, then previous sentence, pause,
@@ -1615,6 +1733,8 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
   restartEngine() {
     this.plugin.stop();
     this.plugin.piper.stop();
+    this.plugin.forgetCalibre();
+    this.autoCalibre = void 0;
     this.check(true);
   }
   /** Obsidian opens the tab: look again, voices may have come or gone. */
@@ -1642,7 +1762,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
     if (e.status === "checking") {
       setting.setDesc("Looking for calibre\u2026");
     } else if (e.status === "ok") {
-      const where = findCalibre(this.plugin.settings.calibreDebug);
+      const where = this.plugin.calibre();
       setting.setDesc(`\u2713 calibre ${e.info.calibre} found: ${where ? where.label : ""}`);
     } else {
       setting.setDesc(createFragment((f) => {
@@ -1726,6 +1846,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
     this.downloading = { key: voice.key, text: "Starting the download\u2026" };
     this.render();
     try {
+      await this.plugin.startPiper();
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total ? `Downloading\u2026 ${Math.floor(100 * done / total)}% of ${mb(total)} MB` : `Downloading\u2026 ${mb(done)} MB`;
         const desc = this.containerEl.querySelector(".readaloud-download-progress");
@@ -1761,9 +1882,11 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
   advancedSection(containerEl) {
     const settings = this.plugin.settings;
     new Setting(containerEl).setName("Advanced").setHeading();
-    const found = findCalibre("");
+    if (this.autoCalibre === void 0) this.autoCalibre = findCalibre("");
+    const found = this.autoCalibre;
     new Setting(containerEl).setName("Path of calibre-debug").setDesc("Leave empty to find calibre automatically. Needed only for calibre in an unusual place, such as the portable version on Windows.").addText((t) => t.setPlaceholder(found ? found.label : "calibre not found").setValue(settings.calibreDebug).onChange(async (value) => {
       settings.calibreDebug = value.trim();
+      this.plugin.forgetCalibre();
       await this.plugin.saveSettings();
     })).addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Check again").onClick(() => {
       this.restartEngine();

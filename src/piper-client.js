@@ -12,7 +12,9 @@ const SERVER_SOURCE = require('./piper_server.py');
  * give its memory back.
  *
  * Audio comes back sentence by sentence through `onAudio(id, samples, rate,
- * last)`, samples as a Float32Array in [-1, 1].
+ * last)`, samples as a Float32Array in [-1, 1]. Errors go to `onError(err,
+ * info)`, where `info` is the server's message ({ id } for a sentence,
+ * { model, voiceFailed } for a voice) or { crashed: true }.
  */
 class PiperClient {
   constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
@@ -46,7 +48,7 @@ class PiperClient {
    */
   start(calibre) {
     if (this.ready) return this.ready;
-    this.ready = new Promise((resolve, reject) => {
+    const ready = new Promise((resolve, reject) => {
       if (!calibre) {
         reject(new Error('calibre was not found. Install calibre 8.8 or newer, '
           + 'or set the path of calibre-debug in the settings.'));
@@ -71,6 +73,7 @@ class PiperClient {
       let header = null;
       let stderr = '';
       let started = false;
+      this.startReject = (err) => { if (!started) reject(err); };
       // Writing to a server that just died fails with EPIPE; the exit
       // handler reports that, the stream must not throw it into Obsidian.
       proc.stdin.on('error', () => {});
@@ -81,6 +84,7 @@ class PiperClient {
       }, this.startMs);
 
       proc.stdout.on('data', (data) => {
+        if (this.proc !== proc) return;    // stopped; a newer server may be running
         buffer = buffer.length ? Buffer.concat([buffer, data]) : data;
         for (;;) {
           if (!header) {
@@ -93,6 +97,10 @@ class PiperClient {
             if (brace === -1) continue;
             line = line.slice(brace);
             try { header = JSON.parse(line); } catch (e) { continue; }
+            if (!header || !Number.isInteger(header.bytes) || header.bytes < 0) {
+              header = null;
+              continue;
+            }
           }
           if (buffer.length < header.bytes) return;
           const pcm = buffer.subarray(0, header.bytes);
@@ -104,7 +112,7 @@ class PiperClient {
           if (h.fatal) { reject(new Error(h.error)); continue; }
           if (h.catalog) { this.gotCatalog(h); continue; }
           if (h.download) { this.gotDownload(h); continue; }
-          if (h.error) { this.onError(new Error(h.error), h.id); continue; }
+          if (h.error) { this.onError(new Error(h.error), h); continue; }
           if (h.id === undefined) continue;
           this.onAudio(h.id, toFloat32(pcm), h.rate, h.last);
         }
@@ -123,12 +131,14 @@ class PiperClient {
         if (!started) {
           reject(new Error(`Piper did not start (${how}).\n${stderr.trim()}`));
         } else if (!proc.killedByUs) {
-          this.onError(gone);
+          this.onError(gone, { crashed: true });
         }
       });
     });
-    this.ready.catch(() => { this.ready = null; });
-    return this.ready;
+    this.ready = ready;
+    // A failed start is forgotten, unless another start has taken its place.
+    ready.catch(() => { if (this.ready === ready) this.ready = null; });
+    return ready;
   }
 
   /**
@@ -142,6 +152,8 @@ class PiperClient {
     this.voiceKey = null;
     this.info = null;
     const err = why || new Error('Piper was stopped.');
+    if (this.startReject) this.startReject(err);
+    this.startReject = null;
     for (const w of this.catalogWaiters.splice(0)) w.reject(err);
     for (const d of this.downloads.values()) d.reject(err);
     this.downloads.clear();
@@ -149,6 +161,7 @@ class PiperClient {
 
   /** The voices calibre knows, with `installed` set for those in `dir`. */
   catalog(dir) {
+    this.touch();
     return new Promise((resolve, reject) => {
       if (!this.proc) {
         reject(new Error('Piper is not running.'));

@@ -91,3 +91,25 @@ test('stopping one server does not fail requests to the next one', { skip: !(fs.
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('stopping while starting leaves no stray server', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
+  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  try {
+    const first = client.start({ command: CALIBRE, args: [] });
+    const firstProc = client.proc;
+    client.stop();                      // "Check again" while still starting
+    await assert.rejects(first);
+    const second = client.start({ command: CALIBRE, args: [] });
+    await second;
+    assert.strictEqual(client.ready, second, 'the first start must not forget the second');
+    await new Promise((r) => (firstProc.exitCode !== null || firstProc.signalCode ? r() : firstProc.once('exit', r)));
+    // A bad request is answered with an error, and the server keeps working.
+    client.proc.stdin.write('[1, 2]\n');
+    const { voices } = await client.catalog();
+    assert.ok(voices.length > 100);
+  } finally {
+    client.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -63,15 +63,40 @@ function defaultExists(file) {
 }
 
 /**
+ * The calibre-debug meant by a path typed in the settings: the path as
+ * copied on Windows comes in quotes, and a folder (Calibre2, calibre.app,
+ * /opt/calibre) means the calibre-debug in it.
+ */
+function configuredPath(typed, platform = process.platform, isDir = defaultIsDir) {
+  let file = typed.trim().replace(/^["']+|["']+$/g, '').trim();
+  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  if (platform === 'darwin' && /\.app\/?$/.test(file)) {
+    file = join(file, 'Contents', 'MacOS', 'calibre-debug');
+  } else if (isDir(file)) {
+    file = join(file, platform === 'win32' ? 'calibre-debug.exe' : 'calibre-debug');
+  }
+  return file;
+}
+
+function defaultIsDir(file) {
+  try {
+    return fs.statSync(file).isDirectory();
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * How to run calibre-debug: the path given in the settings if there is one,
  * else the first usual place where calibre is installed. Null if none.
  */
 function findCalibre(configured, opts = {}) {
   const exists = opts.exists || defaultExists;
-  if (configured) {
-    return { file: configured, command: configured, args: [], label: configured };
+  if (configured && configured.trim()) {
+    const file = configuredPath(configured, opts.platform, opts.isDir);
+    return { file, command: file, args: [], label: file };
   }
   return candidates(opts).find((c) => exists(c.file)) || null;
 }
 
-module.exports = { findCalibre, candidates };
+module.exports = { findCalibre, candidates, configuredPath };

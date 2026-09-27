@@ -45,3 +45,14 @@ test('nothing found', () => {
   assert.strictEqual(findCalibre('', { platform: 'linux', exists: () => false }), null);
   assert.ok(candidates({ platform: 'win32', env: {} }).length >= 1);
 });
+
+test('a typed path may be quoted, or a folder', () => {
+  const { configuredPath } = require('../src/calibre');
+  const no = () => false;
+  assert.strictEqual(configuredPath('"C:\\Calibre Portable\\Calibre\\calibre-debug.exe"', 'win32', no),
+    'C:\\Calibre Portable\\Calibre\\calibre-debug.exe');
+  assert.strictEqual(configuredPath('D:\\Calibre2', 'win32', () => true), 'D:\\Calibre2\\calibre-debug.exe');
+  assert.strictEqual(configuredPath('/Applications/calibre.app', 'darwin', no),
+    '/Applications/calibre.app/Contents/MacOS/calibre-debug');
+  assert.strictEqual(configuredPath(' /opt/calibre ', 'linux', (f) => f === '/opt/calibre'), '/opt/calibre/calibre-debug');
+});

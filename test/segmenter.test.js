@@ -88,3 +88,22 @@ test('heading closers, HTML entities, emoji and footnote marks are not spoken', 
   assert.strictEqual(speakable('Kész ✅ és 😀 jó 🇭🇺'), 'Kész és jó');
   assert.deepStrictEqual(texts('Szöveg.[^1]\n\n[^1]: A lábjegyzet.'), ['Szöveg.', 'A lábjegyzet.']);
 });
+
+test('comments, links, code and math are never cut, so hidden text stays hidden', () => {
+  assert.deepStrictEqual(texts('Látható. %%Titkos. Ne olvasd.%% Tovább.'), ['Látható.', 'Tovább.']);
+  assert.deepStrictEqual(texts('Lásd [Mi ez? Útmutató](https://x.y/z) most.'), ['Lásd Mi ez? Útmutató most.']);
+  assert.deepStrictEqual(texts('Link [[Jegyzet. Kettő|Alias]] vége. `kód. Kód` és $a. B$ vége.'),
+    ['Link Alias vége.', 'kód. Kód és a. B vége.']);
+});
+
+test('Chinese and Japanese sentences, and text without spaces', () => {
+  assert.deepStrictEqual(texts('这是第一句。这是第二句！'), ['这是第一句。', '这是第二句！']);
+  const long = segment('没有空格也没有标点'.repeat(40), { maxLength: 120 });
+  assert.ok(long.length >= 3 && long.every((p) => p.to - p.from <= 120));
+});
+
+test('a big paragraph is cut quickly', () => {
+  const start = Date.now();
+  segment('Ez egy mondat 123. Másik mondat. '.repeat(3000));
+  assert.ok(Date.now() - start < 1000, `${Date.now() - start} ms`);
+});

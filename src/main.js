@@ -44,7 +44,7 @@ class ReadAloudPlugin extends Plugin {
     this.piper = new PiperClient({
       scriptDir: this.pluginDir(),
       onAudio: (id, samples, rate, last) => this.onAudio(id, samples, rate, last),
-      onError: (err, id) => this.onPiperError(err, id),
+      onError: (err, info) => this.onPiperError(err, info),
       isBusy: () => !!this.session,
     });
 
@@ -141,9 +141,22 @@ class ReadAloudPlugin extends Plugin {
 
   // ------------------------------------------------------------ speech engine
 
+  /**
+   * How to run calibre, looked up once: in a Flatpak sandbox every look asks
+   * the host. `forgetCalibre` makes the next start look again.
+   */
+  calibre() {
+    if (this.foundCalibre === undefined) this.foundCalibre = findCalibre(this.settings.calibreDebug);
+    return this.foundCalibre;
+  }
+
+  forgetCalibre() {
+    this.foundCalibre = undefined;
+  }
+
   /** Starts the speech server if needed; resolves with its "ready" message. */
   startPiper() {
-    return this.piper.start(findCalibre(this.settings.calibreDebug));
+    return this.piper.ready || this.piper.start(this.calibre());
   }
 
   /** The voices calibre knows, marked installed or not; starts the server. */
@@ -164,12 +177,12 @@ class ReadAloudPlugin extends Plugin {
   async testVoice(voice) {
     this.stop();
     this.stopTest();
-    await this.startPiper();    // it may have stopped after being idle
-    const { dir } = this.lastCatalog || await this.catalog();
+    const { dir } = await this.catalog();   // (re)starts the server, and the folder may have changed
     if (!this.audio || this.audio.state === 'closed') this.audio = new AudioContext();
     this.audio.resume();
-    this.test = { id: this.nextTrackId++, head: 0, sources: [] };
-    this.piper.setVoice(path.join(dir, voice.key + '.onnx'), this.settings.speed);
+    const model = path.join(dir, voice.key + '.onnx');
+    this.test = { id: this.nextTrackId++, head: 0, sources: [], model };
+    this.piper.setVoice(model, this.settings.speed);
     this.piper.speak(this.test.id, voices.sampleText(voice));
   }
 
@@ -214,6 +227,8 @@ class ReadAloudPlugin extends Plugin {
     if (where === 'cursor') {
       offset = view.getMode() === 'preview' ? this.previewTopOffset(view, cm) : cm.state.selection.main.head;
     }
+    this.stop();
+    this.stopTest();
     const sentences = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
     let seg = sentences.find((p) => p.to > offset);
     if (!seg && where === 'cursor') seg = sentences[0];
@@ -222,8 +237,6 @@ class ReadAloudPlugin extends Plugin {
       return;
     }
 
-    this.stop();
-    this.stopTest();
     // `loading` lasts until the first sound: starting calibre and loading the
     // voice takes a few seconds the first time.
     const session = { view, cm, file: view.file, current: null, next: null, paused: false, loading: true };
@@ -300,9 +313,18 @@ class ReadAloudPlugin extends Plugin {
     this.checkFinished(track);
   }
 
-  /** The sentences of the note as it is now. */
+  /**
+   * The sentences of the note as it is now. A document state never changes,
+   * so they are only worked out again after an edit.
+   */
   sentences() {
-    return segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    const doc = this.session.cm.state.doc;
+    const max = this.settings.maxLength;
+    const cache = this.sentenceCache;
+    if (!cache || cache.doc !== doc || cache.max !== max) {
+      this.sentenceCache = { doc, max, sentences: segment(doc.toString(), { maxLength: max }) };
+    }
+    return this.sentenceCache.sentences;
   }
 
   /** The first sentence starting at or after `offset` in the note as it is now. */
@@ -469,14 +491,29 @@ class ReadAloudPlugin extends Plugin {
     this.updateStatus();
   }
 
-  onPiperError(err, id) {
+  /**
+   * An error from the speech server. Reading stops only for what breaks it:
+   * the server crashing, the sentence being read failing, or the voice it
+   * reads with failing to load. A voice tried in the settings says so.
+   */
+  onPiperError(err, info = {}) {
     console.error('Read Aloud:', err);
+    const test = this.test;
+    if (test && ((info.id !== undefined && info.id === test.id)
+      || (info.voiceFailed && info.model === test.model) || info.crashed)) {
+      this.test = null;
+      new Notice('Read Aloud: ' + err.message, 10000);
+    }
     const session = this.session;
     if (!session) return;
-    if (id !== undefined && !(session.current && session.current.id === id)) {
-      if (session.next && session.next.id === id) session.next = null;
-      return;
+    let fatal = info.crashed;
+    if (info.id !== undefined) {
+      if (session.next && session.next.id === info.id) session.next = null;
+      fatal = session.current && session.current.id === info.id;
+    } else if (info.voiceFailed) {
+      fatal = info.model === session.model;
     }
+    if (!fatal) return;
     new Notice('Read Aloud error: ' + err.message, 8000);
     this.stop();
   }
@@ -508,7 +545,7 @@ class ReadAloudPlugin extends Plugin {
   highlightPreview(seg, scroll) {
     this.clearPreviewHighlight();
     const session = this.session;
-    if (!session || session.view.getMode() !== 'preview' || !window.CSS || !CSS.highlights) return;
+    if (!session || session.view.getMode() !== 'preview') return;
     try {
       const doc = session.cm.state.doc;
       const range = readingRange(session.cm) || seg;
@@ -518,19 +555,24 @@ class ReadAloudPlugin extends Plugin {
       const sections = preview.renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
       if (!sections.length) return;
       if (scroll && !sections[0].el.isConnected) preview.applyScroll(first);
+      // The note may be in a pop-out window, which has its own document and
+      // its own highlights.
+      const page = sections[0].el.ownerDocument;
+      const win = page.defaultView;
+      if (!win || !win.CSS || !win.CSS.highlights) return;
       const nodes = [];
       for (const s of sections) {
-        const walker = document.createTreeWalker(s.el, NodeFilter.SHOW_TEXT);
+        const walker = page.createTreeWalker(s.el, win.NodeFilter.SHOW_TEXT);
         for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
       }
-      const hint = keyLength(segmentText(doc.sliceString(sections[0].lineStart === first
-        ? range.block.from : doc.line(sections[0].lineStart + 1).from, range.from)));
+      const hint = keyLength(segmentText(doc.sliceString(doc.line(sections[0].lineStart + 1).from, range.from)));
       const found = matchText(nodes.map((n) => n.nodeValue), seg.text, hint);
       if (!found) return;
-      const marked = document.createRange();
+      const marked = page.createRange();
       marked.setStart(nodes[found.start[0]], found.start[1]);
       marked.setEnd(nodes[found.end[0]], found.end[1]);
-      CSS.highlights.set('readaloud-current', new Highlight(marked));
+      win.CSS.highlights.set('readaloud-current', new win.Highlight(marked));
+      this.previewWin = win;
       if (scroll) {
         const el = marked.startContainer.parentElement;
         if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -539,7 +581,8 @@ class ReadAloudPlugin extends Plugin {
   }
 
   clearPreviewHighlight() {
-    try { CSS.highlights.delete('readaloud-current'); } catch (e) { /* not supported */ }
+    try { if (this.previewWin) this.previewWin.CSS.highlights.delete('readaloud-current'); } catch (e) { /* closed */ }
+    this.previewWin = null;
   }
 
   /**
@@ -644,6 +687,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
   restartEngine() {
     this.plugin.stop();
     this.plugin.piper.stop();
+    this.plugin.forgetCalibre();
+    this.autoCalibre = undefined;
     this.check(true);
   }
 
@@ -681,7 +726,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
     if (e.status === 'checking') {
       setting.setDesc('Looking for calibre…');
     } else if (e.status === 'ok') {
-      const where = findCalibre(this.plugin.settings.calibreDebug);
+      const where = this.plugin.calibre();
       setting.setDesc(`✓ calibre ${e.info.calibre} found: ${where ? where.label : ''}`);
     } else {
       setting.setDesc(createFragment((f) => {
@@ -798,6 +843,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
     this.downloading = { key: voice.key, text: 'Starting the download…' };
     this.render();
     try {
+      await this.plugin.startPiper();    // it stops after 10 idle minutes
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total
           ? `Downloading… ${Math.floor((100 * done) / total)}% of ${mb(total)} MB`
@@ -859,7 +905,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     new Setting(containerEl).setName('Advanced').setHeading();
 
-    const found = findCalibre('');
+    if (this.autoCalibre === undefined) this.autoCalibre = findCalibre('');
+    const found = this.autoCalibre;
     new Setting(containerEl)
       .setName('Path of calibre-debug')
       .setDesc('Leave empty to find calibre automatically. Needed only for calibre in an unusual place, '
@@ -869,6 +916,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
         .setValue(settings.calibreDebug)
         .onChange(async (value) => {
           settings.calibreDebug = value.trim();
+          this.plugin.forgetCalibre();
           await this.plugin.saveSettings();
         }))
       .addExtraButton((b) => b

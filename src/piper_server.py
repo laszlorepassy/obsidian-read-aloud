@@ -35,7 +35,24 @@ FIXED_SHARE = 0.3
 SENTENCE_PAUSE = 0.25
 QUALITIES = ("x_low", "low", "medium", "high")
 
-out = sys.stdout.buffer
+
+def private_stdout():
+    """
+    The frames get stdout to themselves: anything else printed there (by
+    calibre, Piper, espeak or onnxruntime, from Python or C) would land
+    between a header and its audio and garble both. fd 1 is duplicated for
+    the frames, and fd 1 itself then goes to stderr.
+    """
+    fd = os.dup(1)
+    if sys.platform == "win32":
+        import msvcrt
+        msvcrt.setmode(fd, os.O_BINARY)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return os.fdopen(fd, "wb")
+
+
+out = private_stdout()
 out_lock = threading.Lock()
 requests = queue.Queue()
 generation = 0          # bumped by every cancel; older speak requests are dropped
@@ -51,24 +68,27 @@ def send(header, pcm=b""):
 
 def read_stdin():
     global generation
-    for line in sys.stdin.buffer:
-        try:
-            req = json.loads(line)
-        except ValueError:
-            continue
-        cmd = req.get("cmd")
-        if cmd == "cancel":
-            generation += 1
-        elif cmd == "catalog":
-            send_catalog(req.get("dir"))
-            continue
-        elif cmd == "download":
-            threading.Thread(target=download, args=(req["key"], req.get("dir")),
-                             daemon=True).start()
-            continue
-        req["generation"] = generation
-        requests.put(req)
-    requests.put(None)  # Obsidian went away
+    try:
+        for line in sys.stdin.buffer:
+            try:
+                req = json.loads(line)
+                cmd = req.get("cmd")
+                if cmd == "cancel":
+                    generation += 1
+                elif cmd == "catalog":
+                    send_catalog(req.get("dir"))
+                    continue
+                elif cmd == "download":
+                    threading.Thread(target=download,
+                                     args=(req["key"], req.get("dir")),
+                                     daemon=True).start()
+                    continue
+                req["generation"] = generation
+                requests.put(req)
+            except Exception as e:
+                send({"error": "Bad request: %s" % e})
+    finally:
+        requests.put(None)  # Obsidian went away, or reading failed
 
 
 def length_multiplier(speed):
@@ -222,7 +242,8 @@ def main():
             except Exception as e:
                 loaded = None
                 send({"error": "Could not load the voice %s: %s"
-                      % (wanted[0], e), "voiceFailed": True})
+                      % (wanted[0], e), "voiceFailed": True,
+                      "model": wanted[0]})
         elif cmd == "speak":
             speak(engine, req, loaded)
 
