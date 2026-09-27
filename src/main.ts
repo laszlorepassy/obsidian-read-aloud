@@ -20,7 +20,7 @@ import type { ErrorInfo, ServerInfo, Catalog } from './piper-client.ts';
 import HELP from '../HELP.md';
 import SERVER_SOURCE from './piper_server.py';
 
-interface ReadAloudSettings {
+export interface ReadAloudSettings {
   calibreDebug: string;
   voicesDir: string;
   voice: string;
@@ -62,7 +62,7 @@ interface Session {
 }
 
 /** What the speech server said about calibre and the voices. */
-type EngineState =
+export type EngineState =
   | { status: 'checking' }
   | { status: 'error'; error: string }
   | { status: 'ok'; info: ServerInfo; voices: Voice[]; dir: string };

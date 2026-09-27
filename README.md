@@ -87,8 +87,11 @@ to scroll along, and, optionally, where calibre and the voices are.
 
 ## Build and install
 
-The plugin is written in TypeScript (`src/`), bundled by esbuild into
-`main.js`.
+The plugin, its tests and the install script are written in TypeScript,
+bundled by esbuild into `main.js`. Node 22.18 or newer runs the tests and
+the install script as they are, without compiling them. `build.js` stays
+JavaScript, so that Obsidian's review, which rebuilds `main.js` to compare
+it with the release, can run it with any Node version.
 
 ```bash
 npm install

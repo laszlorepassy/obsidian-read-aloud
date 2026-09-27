@@ -513,7 +513,7 @@ ${stderr.trim()}`));
    * after 30 seconds without an answer; a late answer still goes to this
    * request (answers come in order), just to nobody waiting.
    */
-  catalog(dir) {
+  catalog(dir = "") {
     this.touch();
     return new Promise((resolve, reject) => {
       if (!this.proc) {

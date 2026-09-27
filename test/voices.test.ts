@@ -1,8 +1,6 @@
-'use strict';
-
-const test = require('node:test');
-const assert = require('node:assert');
-const v = require('../src/voices.ts');
+import test from 'node:test';
+import assert from 'node:assert';
+import * as v from '../src/voices.ts';
 
 const list = [
   { key: 'en_US-amy-low', lang: 'en_US', name: 'amy', quality: 'low', installed: true },

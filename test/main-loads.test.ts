@@ -1,19 +1,17 @@
-'use strict';
-
 // The bundled main.js must load with only what Obsidian provides, and the
 // committed one must be what the source builds to (as the release checks).
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('fs');
-const path = require('path');
-const { root, build, loadBundle, obsidianStub } = require('./bundle');
+import test from 'node:test';
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { root, build, loadBundle, obsidianStub } from './bundle.ts';
 
 test('main.js builds and exports the plugin class', () => {
   const obsidian = obsidianStub();
-  const bundle = loadBundle(obsidian);
-  const ReadAloud = bundle.default || bundle;
+  const bundle = loadBundle<{ default: new (...args: unknown[]) => unknown }>(obsidian);
+  const ReadAloud = bundle.default;
   assert.strictEqual(typeof ReadAloud, 'function');
-  assert.ok(ReadAloud.prototype instanceof obsidian.Plugin);
+  assert.ok(ReadAloud.prototype instanceof (obsidian.Plugin as new () => unknown));
 });
 
 test('the committed main.js is up to date with the source', () => {

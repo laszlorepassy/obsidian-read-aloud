@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { EditorState } from '@codemirror/state';
 import { readingField, setReadingForTest } from '../src/highlight.ts';
+import { must } from './must.ts';
 
 test('the highlight follows edits made before and inside it', () => {
   let state = EditorState.create({ doc: 'Első bekezdés.\n\nMásodik bekezdés.', extensions: [readingField] });
@@ -13,7 +14,7 @@ test('the highlight follows edits made before and inside it', () => {
   assert.strictEqual(state.sliceDoc(20, 37), 'Második bekezdés.');
 
   state = state.update({ changes: { from: 28, insert: 'szép ' } }).state;
-  const { from, to } = state.field(readingField).range;
+  const { from, to } = must(state.field(readingField).range);
   assert.strictEqual(state.sliceDoc(from, to), 'Második szép bekezdés.');
 
   state = state.update({ effects: setReadingForTest(null) }).state;

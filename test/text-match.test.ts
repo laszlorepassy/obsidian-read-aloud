@@ -1,10 +1,10 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert';
+import { matchText, keyLength } from '../src/text-match.ts';
+import { must } from './must.ts';
 
-const test = require('node:test');
-const assert = require('node:assert');
-const { matchText, keyLength } = require('../src/text-match.ts');
-
-const cut = (pieces, m) => {
+const cut = (pieces: string[], found: ReturnType<typeof matchText>) => {
+  const m = must(found);
   // The matched text, across pieces.
   let out = '';
   for (let p = m.start[0]; p <= m.end[0]; p++) {
@@ -22,8 +22,8 @@ test('finds a sentence across text nodes, ignoring markup and case', () => {
 test('picks the repeated sentence nearest to the hint', () => {
   const pieces = ['Igen. Nem. Igen.'];
   const second = matchText(pieces, 'Igen.', keyLength('Igen. Nem. '));
-  assert.deepStrictEqual(second.start, [0, 11]);
-  assert.deepStrictEqual(matchText(pieces, 'Igen.', 0).start, [0, 0]);
+  assert.deepStrictEqual(must(second).start, [0, 11]);
+  assert.deepStrictEqual(must(matchText(pieces, 'Igen.', 0)).start, [0, 0]);
 });
 
 test('no match, or nothing to match', () => {
@@ -36,7 +36,7 @@ test('letters whose lowercase is longer, and letters outside the BMP', () => {
   const m = matchText(tr, 'İzmir güzel.');
   assert.strictEqual(cut(tr, m), 'İzmir güzel.');
   const after = matchText(['İyi günler. ', 'Ankara başkent.'], 'Ankara başkent.', keyLength('İyi günler. '));
-  assert.deepStrictEqual(after.start, [1, 0]);
+  assert.deepStrictEqual(must(after).start, [1, 0]);
   const cjk = ['前文。', '𠀀字在此。'];
   const c = matchText(cjk, '𠀀字在此。');
   assert.strictEqual(cut(cjk, c), '𠀀字在此。');

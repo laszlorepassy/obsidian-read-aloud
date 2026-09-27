@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-'use strict';
 
 // Builds the plugin and copies it into Obsidian vaults: the ones given on the
 // command line, or else every vault Obsidian has open right now. Afterwards,
@@ -9,16 +7,16 @@
 //   npm run install-plugin
 //   npm run install-plugin -- ~/Dokumentumok/2026-27-tanév
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { execFileSync } = require('child_process');
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
-const root = path.join(__dirname, '..');
-const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+const root = path.join(import.meta.dirname, '..');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')) as { id: string };
 
 /** Obsidian's own settings folder, which lists the vaults. */
-function obsidianConfigDir() {
+function obsidianConfigDir(): string {
   if (process.platform === 'win32') return path.join(process.env.APPDATA || '', 'obsidian');
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support', 'obsidian');
@@ -26,12 +24,15 @@ function obsidianConfigDir() {
   return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'obsidian');
 }
 
-function openVaults() {
+/** The vaults Obsidian has open, from its obsidian.json. */
+function openVaults(): string[] {
   const config = path.join(obsidianConfigDir(), 'obsidian.json');
   try {
-    const vaults = JSON.parse(fs.readFileSync(config, 'utf8')).vaults || {};
-    return Object.values(vaults).filter((v) => v.open).map((v) => v.path);
-  } catch (e) {
+    const { vaults } = JSON.parse(fs.readFileSync(config, 'utf8')) as {
+      vaults?: Record<string, { path: string; open?: boolean }>;
+    };
+    return Object.values(vaults ?? {}).filter((v) => v.open).map((v) => v.path);
+  } catch {
     return [];
   }
 }

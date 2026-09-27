@@ -258,7 +258,7 @@ class PiperClient {
    * after 30 seconds without an answer; a late answer still goes to this
    * request (answers come in order), just to nobody waiting.
    */
-  catalog(dir: string): Promise<Catalog> {
+  catalog(dir = ''): Promise<Catalog> {
     this.touch();
     return new Promise<Catalog>((resolve, reject) => {
       if (!this.proc) {

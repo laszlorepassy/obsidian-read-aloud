@@ -1,10 +1,8 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert';
+import { segment, speakable } from '../src/segmenter.ts';
 
-const test = require('node:test');
-const assert = require('node:assert');
-const { segment, speakable } = require('../src/segmenter.ts');
-
-const texts = (src, opts) => segment(src, opts).map((s) => s.text);
+const texts = (src: string, opts?: { maxLength?: number }) => segment(src, opts).map((s) => s.text);
 
 test('skips front matter, code, math and comments', () => {
   const src = [
