@@ -41,3 +41,7 @@
 .readaloud-help {
   width: min(720px, 92vw);
 }
+
+.readaloud-error {
+  color: var(--text-error);
+}

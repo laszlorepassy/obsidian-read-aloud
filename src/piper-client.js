@@ -17,6 +17,9 @@ const SERVER_SOURCE = require('./piper_server.py');
 class PiperClient {
   constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10 }) {
     this.scriptDir = scriptDir;
+    this.info = null;           // the server's "ready" message: calibre version, voices folder
+    this.catalogWaiters = [];
+    this.downloads = new Map(); // voice key -> { promise, resolve, reject, onProgress }
     this.onAudio = onAudio;
     this.onError = onError;
     this.isBusy = isBusy || (() => false);
@@ -27,27 +30,41 @@ class PiperClient {
     this.idleTimer = null;
   }
 
-  scriptPath() {
-    const file = path.join(this.scriptDir, 'piper_server.py');
+  scriptPath(dir) {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'piper_server.py');
     let current = null;
     try { current = fs.readFileSync(file, 'utf8'); } catch (e) { /* not written yet */ }
     if (current !== SERVER_SOURCE) fs.writeFileSync(file, SERVER_SOURCE);
     return file;
   }
 
-  /** Starts the server if needed; resolves once Piper is initialized. */
-  start(calibreDebug) {
+  /**
+   * Starts the server if needed with `calibre` (from findCalibre); resolves
+   * with its "ready" message once Piper is initialized.
+   */
+  start(calibre) {
     if (this.ready) return this.ready;
     this.ready = new Promise((resolve, reject) => {
-      if (!fs.existsSync(calibreDebug)) {
-        reject(new Error(`calibre not found: ${calibreDebug}`));
+      if (!calibre) {
+        reject(new Error('calibre was not found. Install calibre 8.8 or newer, '
+          + 'or set the path of calibre-debug in the settings.'));
         return;
       }
-      const proc = spawn(calibreDebug, ['-e', this.scriptPath()], {
+      let command = calibre.command;
+      let args = [...calibre.args, '-e', this.scriptPath(calibre.scriptDir || this.scriptDir)];
+      if (process.env.FLATPAK_ID) {
+        // Obsidian itself runs in a Flatpak sandbox: calibre is outside it.
+        args = ['--host', command, ...args];
+        command = 'flatpak-spawn';
+      }
+      const proc = spawn(command, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: Object.assign({}, process.env, { PYTHONUNBUFFERED: '1' }),
+        windowsHide: true,
       });
       this.proc = proc;
+      this.touch();
       this.voiceKey = null;
       let buffer = Buffer.alloc(0);
       let header = null;
@@ -70,7 +87,10 @@ class PiperClient {
           buffer = buffer.subarray(header.bytes);
           const h = header;
           header = null;
-          if (h.ready) { started = true; resolve(); continue; }
+          if (h.ready) { started = true; this.info = h; resolve(h); continue; }
+          if (h.fatal) { reject(new Error(h.error)); continue; }
+          if (h.catalog) { this.gotCatalog(h); continue; }
+          if (h.download) { this.gotDownload(h); continue; }
           if (h.error) { this.onError(new Error(h.error), h.id); continue; }
           if (h.id === undefined) continue;
           this.onAudio(h.id, toFloat32(pcm), h.rate, h.last);
@@ -83,10 +103,14 @@ class PiperClient {
       });
       proc.on('exit', (code) => {
         this.forget(proc);
+        const gone = new Error(`Piper stopped (exit code ${code}).\n${stderr.trim()}`);
+        for (const w of this.catalogWaiters.splice(0)) w.reject(gone);
+        for (const d of this.downloads.values()) d.reject(gone);
+        this.downloads.clear();
         if (!started) {
           reject(new Error(`Piper did not start (exit code ${code}).\n${stderr.trim()}`));
         } else if (code && code !== 0 && !proc.killedByUs) {
-          this.onError(new Error(`Piper stopped (exit code ${code}).\n${stderr.trim()}`));
+          this.onError(gone);
         }
       });
     });
@@ -99,6 +123,49 @@ class PiperClient {
     this.proc = null;
     this.ready = null;
     this.voiceKey = null;
+    this.info = null;
+  }
+
+  /** The voices calibre knows, with `installed` set for those in `dir`. */
+  catalog(dir) {
+    return new Promise((resolve, reject) => {
+      this.catalogWaiters.push({ resolve, reject });
+      this.send({ cmd: 'catalog', dir: dir || undefined });
+    });
+  }
+
+  gotCatalog(h) {
+    const w = this.catalogWaiters.shift();
+    if (w) w.resolve({ voices: h.catalog, dir: h.dir });
+  }
+
+  /** Downloads a voice from calibre's list into `dir`. */
+  download(key, dir, onProgress) {
+    if (this.downloads.has(key)) return this.downloads.get(key).promise;
+    const entry = { onProgress };
+    entry.promise = new Promise((resolve, reject) => {
+      entry.resolve = resolve;
+      entry.reject = reject;
+    });
+    this.downloads.set(key, entry);
+    this.touch();
+    this.send({ cmd: 'download', key, dir: dir || undefined });
+    return entry.promise;
+  }
+
+  gotDownload(h) {
+    const entry = this.downloads.get(h.download);
+    if (!entry) return;
+    this.touch();
+    if (h.error) {
+      this.downloads.delete(h.download);
+      entry.reject(new Error(h.error));
+    } else if (h.finished) {
+      this.downloads.delete(h.download);
+      entry.resolve();
+    } else if (entry.onProgress) {
+      entry.onProgress(h.done, h.total);
+    }
   }
 
   send(obj) {
@@ -124,7 +191,8 @@ class PiperClient {
 
   touch() {
     clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => (this.isBusy() ? this.touch() : this.stop()), this.idleMs);
+    this.idleTimer = setTimeout(() => (this.isBusy() || this.downloads.size ? this.touch() : this.stop()),
+      this.idleMs);
   }
 
   stop() {

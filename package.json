@@ -1,6 +1,6 @@
 {
   "name": "obsidian-readaloud",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reads the current Obsidian note aloud with a local Piper voice, paragraph by paragraph, highlighting the part being read.",
   "main": "main.js",
   "scripts": {

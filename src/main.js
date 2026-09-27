@@ -4,39 +4,33 @@ const {
   Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
   setIcon, setTooltip,
 } = require('obsidian');
-const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { segment } = require('./segmenter');
 const { PiperClient } = require('./piper-client');
+const { findCalibre } = require('./calibre');
+const voices = require('./voices');
 const { readingField, showReading, readingRange } = require('./highlight');
 const HELP = require('../HELP.md');
 
 const DEFAULT_SETTINGS = {
-  calibreDebug: '/opt/calibre/calibre-debug',
-  voicesDir: path.join(os.homedir(), '.cache', 'calibre', 'piper-voices'),
-  voice: 'hu_HU-anna-medium',
+  calibreDebug: '',   // empty: found automatically
+  voicesDir: '',      // empty: calibre's own folder of Piper voices
+  voice: '',          // empty: an installed voice in the user's language
   speed: 1.0,
   maxLength: 300,
   paragraphPause: 0.5,
   follow: true,
 };
 
-/** The Piper voices in a folder: the .onnx models that have their .json. */
-function listVoices(dir) {
-  try {
-    return fs.readdirSync(dir)
-      .filter((f) => f.endsWith('.onnx') && fs.existsSync(path.join(dir, f + '.json')))
-      .map((f) => f.slice(0, -5))
-      .sort();
-  } catch (e) {
-    return [];
-  }
-}
-
-function voiceLabel(name) {
-  const m = /^([a-z]{2}_[A-Z]{2})-(.+)-(x_low|low|medium|high)$/.exec(name);
-  return m ? `${m[2]} (${m[1]}, ${m[3]})` : name;
+/**
+ * The user's languages, most preferred first, e.g. ['hu-HU', 'en-US']: the
+ * system's, which notes are most likely written in, then Obsidian's own.
+ */
+function userLocales() {
+  const list = [...(navigator.languages || []), navigator.language || ''];
+  try { list.push(window.localStorage.getItem('language') || ''); } catch (e) { /* no storage */ }
+  return list.filter(Boolean);
 }
 
 class ReadAloudPlugin extends Plugin {
@@ -149,10 +143,54 @@ class ReadAloudPlugin extends Plugin {
     return path.join(base, this.manifest.dir);
   }
 
-  voiceModel() {
-    const voices = listVoices(this.settings.voicesDir);
-    const name = voices.includes(this.settings.voice) ? this.settings.voice : voices[0];
-    return name ? path.join(this.settings.voicesDir, name + '.onnx') : null;
+  // ------------------------------------------------------------ speech engine
+
+  /** Starts the speech server if needed; resolves with its "ready" message. */
+  startPiper() {
+    return this.piper.start(findCalibre(this.settings.calibreDebug));
+  }
+
+  /** The voices calibre knows, marked installed or not; starts the server. */
+  async catalog() {
+    await this.startPiper();
+    this.lastCatalog = await this.piper.catalog(this.settings.voicesDir);
+    return this.lastCatalog;
+  }
+
+  /** The .onnx file of the voice to read with, or null if none is installed. */
+  async voiceModel() {
+    const { voices: list, dir } = await this.catalog();
+    const key = voices.chooseVoice(list, this.settings.voice, userLocales());
+    return key ? path.join(dir, key + '.onnx') : null;
+  }
+
+  /** Reads a sample sentence with a voice, for the settings. */
+  async testVoice(voice) {
+    this.stop();
+    this.stopTest();
+    await this.startPiper();    // it may have stopped after being idle
+    const { dir } = this.lastCatalog || await this.catalog();
+    if (!this.audio || this.audio.state === 'closed') this.audio = new AudioContext();
+    this.audio.resume();
+    this.test = { id: this.nextTrackId++, head: 0, sources: [] };
+    this.piper.setVoice(path.join(dir, voice.key + '.onnx'), this.settings.speed);
+    this.piper.speak(this.test.id, voices.sampleText(voice));
+  }
+
+  stopTest() {
+    if (!this.test) return;
+    for (const s of this.test.sources) {
+      try { s.stop(); } catch (e) { /* not started */ }
+    }
+    this.test = null;
+    this.piper.cancel();
+  }
+
+  openSettings() {
+    try {
+      this.app.setting.open();
+      this.app.setting.openTabById(this.manifest.id);
+    } catch (e) { /* internal API changed */ }
   }
 
   // ------------------------------------------------------------ starting
@@ -189,11 +227,7 @@ class ReadAloudPlugin extends Plugin {
     }
 
     this.stop();
-    const model = this.voiceModel();
-    if (!model) {
-      new Notice(`No Piper voice found in ${this.settings.voicesDir}`);
-      return;
-    }
+    this.stopTest();
     // `loading` lasts until the first sound: starting calibre and loading the
     // voice takes a few seconds the first time.
     const session = { view, cm, file: view.file, current: null, next: null, paused: false, loading: true };
@@ -205,14 +239,21 @@ class ReadAloudPlugin extends Plugin {
     this.playhead = 0;
 
     try {
-      await this.piper.start(this.settings.calibreDebug);
+      session.model = await this.voiceModel();
     } catch (err) {
       if (this.session === session) this.stop();
-      new Notice('Read Aloud could not start: ' + err.message, 10000);
+      new Notice('Read Aloud could not start: ' + err.message
+        + '\n\nSee Settings → Read Aloud and the help there.', 15000);
       console.error('Read Aloud:', err);
       return;
     }
     if (this.session !== session) return;   // stopped while loading
+    if (!session.model) {
+      this.stop();
+      new Notice('No voice is installed yet. Download one in Settings → Read Aloud.', 10000);
+      this.openSettings();
+      return;
+    }
     this.play(seg);
   }
 
@@ -234,7 +275,7 @@ class ReadAloudPlugin extends Plugin {
 
   request(seg) {
     const track = { id: this.nextTrackId++, seg, playing: false, done: false, pending: 0, queued: [] };
-    this.piper.setVoice(this.voiceModel(), this.settings.speed);
+    this.piper.setVoice(this.session.model, this.settings.speed);
     this.piper.speak(track.id, seg.text);
     return track;
   }
@@ -270,6 +311,10 @@ class ReadAloudPlugin extends Plugin {
   }
 
   onAudio(id, samples, rate, last) {
+    if (this.test && this.test.id === id) {
+      this.playTest(samples, rate);
+      return;
+    }
     const session = this.session;
     if (!session) return;
     const track = [session.current, session.next].find((t) => t && t.id === id);
@@ -306,6 +351,20 @@ class ReadAloudPlugin extends Plugin {
       track.pending--;
       this.checkFinished(track);
     };
+  }
+
+  playTest(samples, rate) {
+    if (!samples.length) return;
+    const ctx = this.audio;
+    const buffer = ctx.createBuffer(1, samples.length, rate);
+    buffer.copyToChannel(samples, 0);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    const at = Math.max(ctx.currentTime + 0.03, this.test.head);
+    source.start(at);
+    this.test.head = at + buffer.duration;
+    this.test.sources.push(source);
   }
 
   checkFinished(track) {
@@ -488,6 +547,20 @@ class ReadAloudPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Version 0.1 saved the Linux paths it assumed; now they are found.
+    if (this.settings.calibreDebug === '/opt/calibre/calibre-debug') this.settings.calibreDebug = '';
+    if (this.settings.voicesDir === path.join(os.homedir(), '.cache', 'calibre', 'piper-voices')) {
+      this.settings.voicesDir = '';
+    }
+  }
+
+  /** The voice setting changed: read on with it from the next piece. */
+  async voiceChanged() {
+    if (!this.session || this.session.loading) return;
+    try {
+      const model = await this.voiceModel();
+      if (model && this.session) this.session.model = model;
+    } catch (e) { /* keep the voice it had */ }
   }
 
   async saveSettings() {
@@ -499,33 +572,120 @@ class ReadAloudSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
+    // What the speech server told: { status: 'checking' | 'ok' | 'error',
+    // info, voices, dir, error }, plus the download section's choices.
+    this.engine = null;
+    this.downloadLang = null;
+    this.downloadKey = null;
+    this.downloading = null;    // { key, text }
+  }
+
+  /** Asks the speech server about calibre and the voices, then redraws. */
+  async check() {
+    this.engine = { status: 'checking' };
+    this.display();
+    try {
+      const { voices: list, dir } = await this.plugin.catalog();
+      this.engine = { status: 'ok', info: this.plugin.piper.info, voices: list, dir };
+    } catch (err) {
+      this.engine = { status: 'error', error: err.message };
+    }
+    this.display();
+  }
+
+  hide() {
+    this.plugin.stopTest();
+  }
+
+  /** Starts the speech server anew, e.g. after calibre was installed. */
+  restartEngine() {
+    this.plugin.stop();
+    this.plugin.piper.stop();
+    this.check();
   }
 
   display() {
+    if (!this.engine) {
+      this.check();
+      return;
+    }
     const { containerEl } = this;
-    const settings = this.plugin.settings;
+    const scroll = containerEl.scrollTop;
     containerEl.empty();
 
-    const voices = listVoices(settings.voicesDir);
     new Setting(containerEl)
       .setName('User guide')
-      .setDesc('How to start, control and set up reading aloud.')
+      .setDesc('Installing calibre and voices on Windows, macOS and Linux, and using Read Aloud.')
       .addButton((b) => b
         .setButtonText('Open help')
         .onClick(() => new HelpModal(this.app, this.plugin).open()));
 
-    new Setting(containerEl)
-      .setName('Voice')
-      .setDesc(voices.length ? 'The Piper voice that reads the note.'
-        : 'No Piper voice in the voices folder below.')
+    this.engineSection(containerEl);
+    if (this.engine.status === 'ok') {
+      this.voiceSection(containerEl);
+      this.downloadSection(containerEl);
+    }
+    this.readingSection(containerEl);
+    this.advancedSection(containerEl);
+    containerEl.scrollTop = scroll;
+  }
+
+  engineSection(containerEl) {
+    new Setting(containerEl).setName('Speech engine').setHeading();
+    const e = this.engine;
+    const setting = new Setting(containerEl).setName('calibre with Piper');
+    if (e.status === 'checking') {
+      setting.setDesc('Looking for calibre…');
+    } else if (e.status === 'ok') {
+      const where = findCalibre(this.plugin.settings.calibreDebug);
+      setting.setDesc(`✓ calibre ${e.info.calibre} found: ${where ? where.label : ''}`);
+    } else {
+      setting.setDesc(createFragment((f) => {
+        f.createSpan({ cls: 'readaloud-error', text: `✗ ${e.error}` });
+        f.createEl('br');
+        f.appendText('Install calibre 8.8 or newer from ');
+        f.createEl('a', { text: 'calibre-ebook.com', href: 'https://calibre-ebook.com/download' });
+        f.appendText(', then click Check again. The help tells how, for each system.');
+      }));
+    }
+    setting.addButton((b) => b
+      .setButtonText('Check again')
+      .setDisabled(e.status === 'checking')
+      .onClick(() => {
+        this.restartEngine();
+      }));
+  }
+
+  voiceSection(containerEl) {
+    const settings = this.plugin.settings;
+    new Setting(containerEl).setName('Voice').setHeading();
+    const installed = this.engine.voices.filter((v) => v.installed).sort(voices.byLanguageThenName);
+    const current = voices.chooseVoice(this.engine.voices, settings.voice, userLocales());
+
+    const setting = new Setting(containerEl).setName('Voice');
+    if (!installed.length) {
+      setting.setDesc('No voice is installed yet. Download one below.');
+      return;
+    }
+    setting
+      .setDesc('The voice that reads your notes.')
       .addDropdown((dd) => {
-        for (const v of voices) dd.addOption(v, voiceLabel(v));
-        dd.setValue(voices.includes(settings.voice) ? settings.voice : (voices[0] || ''));
+        for (const v of installed) dd.addOption(v.key, voices.voiceLabel(v));
+        dd.setValue(current);
         dd.onChange(async (value) => {
           settings.voice = value;
           await this.plugin.saveSettings();
+          this.plugin.voiceChanged();
         });
-      });
+      })
+      .addExtraButton((b) => b
+        .setIcon('play')
+        .setTooltip('Listen to this voice')
+        .onClick(() => {
+          const key = settings.voice && installed.some((v) => v.key === settings.voice) ? settings.voice : current;
+          this.plugin.testVoice(installed.find((v) => v.key === key))
+            .catch((err) => new Notice('Read Aloud: ' + err.message));
+        }));
 
     new Setting(containerEl)
       .setName('Speed')
@@ -538,6 +698,84 @@ class ReadAloudSettingTab extends PluginSettingTab {
           settings.speed = value;
           await this.plugin.saveSettings();
         }));
+  }
+
+  downloadSection(containerEl) {
+    new Setting(containerEl).setName('Download voices').setHeading();
+    const all = this.engine.voices.filter((v) => v.lang);
+    const langs = voices.languages(all);
+    if (!this.downloadLang || !langs.some((l) => l.lang === this.downloadLang)) {
+      this.downloadLang = voices.preferredLanguage(all, userLocales());
+    }
+    const inLang = all.filter((v) => v.lang === this.downloadLang).sort(voices.byLanguageThenName);
+    if (!inLang.some((v) => v.key === this.downloadKey)) {
+      this.downloadKey = (inLang.find((v) => !v.installed) || inLang[0] || {}).key;
+    }
+
+    new Setting(containerEl)
+      .setName('Language')
+      .setDesc(`${langs.length} languages, from the voices of the Piper project (huggingface.co/rhasspy/piper-voices).`)
+      .addDropdown((dd) => {
+        for (const l of langs) dd.addOption(l.lang, l.label);
+        dd.setValue(this.downloadLang);
+        dd.onChange((value) => {
+          this.downloadLang = value;
+          this.downloadKey = null;
+          this.display();
+        });
+      });
+
+    const chosen = inLang.find((v) => v.key === this.downloadKey);
+    const busy = this.downloading;
+    const setting = new Setting(containerEl)
+      .setName('Voice to download')
+      .setDesc(busy ? busy.text : (chosen && chosen.installed ? '✓ Installed.'
+        : 'Most voices are 20–120 MB. "medium" is a good balance of quality and speed.'))
+      .addDropdown((dd) => {
+        for (const v of inLang) dd.addOption(v.key, voices.voiceName(v) + (v.installed ? ' ✓' : ''));
+        if (this.downloadKey) dd.setValue(this.downloadKey);
+        dd.onChange((value) => {
+          this.downloadKey = value;
+          this.display();
+        });
+      });
+    if (busy) setting.descEl.addClass('readaloud-download-progress');
+    setting.addButton((b) => {
+      b.setButtonText(chosen && chosen.installed ? 'Download again' : 'Download')
+        .setDisabled(!chosen || !!busy)
+        .onClick(() => this.download(chosen));
+      if (chosen && !chosen.installed) b.setCta();
+    });
+  }
+
+  async download(voice) {
+    const settings = this.plugin.settings;
+    const mb = (n) => (n / 1048576).toFixed(0);
+    this.downloading = { key: voice.key, text: 'Starting the download…' };
+    this.display();
+    try {
+      await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
+        this.downloading.text = total
+          ? `Downloading… ${Math.floor((100 * done) / total)}% of ${mb(total)} MB`
+          : `Downloading… ${mb(done)} MB`;
+        const desc = this.containerEl.querySelector('.readaloud-download-progress');
+        if (desc) desc.setText(this.downloading.text);
+        else this.display();
+      });
+      settings.voice = voice.key;   // a voice just downloaded is the one wanted
+      await this.plugin.saveSettings();
+      this.plugin.voiceChanged();
+      new Notice(`Read Aloud: ${voices.voiceLabel(voice)} is installed and selected.`);
+    } catch (err) {
+      new Notice(`Read Aloud: could not download ${voice.key}: ${err.message}`, 10000);
+    }
+    this.downloading = null;
+    await this.check();
+  }
+
+  readingSection(containerEl) {
+    const settings = this.plugin.settings;
+    new Setting(containerEl).setName('Reading').setHeading();
 
     new Setting(containerEl)
       .setName('Maximum characters at a time')
@@ -571,31 +809,46 @@ class ReadAloudSettingTab extends PluginSettingTab {
           settings.follow = value;
           await this.plugin.saveSettings();
         }));
+  }
 
+  advancedSection(containerEl) {
+    const settings = this.plugin.settings;
     new Setting(containerEl).setName('Advanced').setHeading();
 
+    const found = findCalibre('');
     new Setting(containerEl)
       .setName('Path of calibre-debug')
-      .setDesc('Read Aloud uses the Piper built into calibre.')
+      .setDesc('Leave empty to find calibre automatically. Needed only for calibre in an unusual place, '
+        + 'such as the portable version on Windows.')
       .addText((t) => t
-        .setPlaceholder(DEFAULT_SETTINGS.calibreDebug)
+        .setPlaceholder(found ? found.label : 'calibre not found')
         .setValue(settings.calibreDebug)
         .onChange(async (value) => {
-          settings.calibreDebug = value.trim() || DEFAULT_SETTINGS.calibreDebug;
-          this.plugin.piper.stop();
+          settings.calibreDebug = value.trim();
           await this.plugin.saveSettings();
+        }))
+      .addExtraButton((b) => b
+        .setIcon('refresh-cw')
+        .setTooltip('Check again')
+        .onClick(() => {
+          this.restartEngine();
         }));
 
     new Setting(containerEl)
       .setName('Voices folder')
-      .setDesc('Where the Piper .onnx and .onnx.json files are.')
+      .setDesc('Leave empty to share the voices with calibre\'s e-book viewer. Voices from elsewhere '
+        + '(an .onnx file with its .onnx.json) can be put in this folder too.')
       .addText((t) => t
-        .setPlaceholder(DEFAULT_SETTINGS.voicesDir)
+        .setPlaceholder((this.engine && this.engine.info && this.engine.info.voicesDir) || 'calibre\'s folder')
         .setValue(settings.voicesDir)
         .onChange(async (value) => {
-          settings.voicesDir = value.trim() || DEFAULT_SETTINGS.voicesDir;
+          settings.voicesDir = value.trim();
           await this.plugin.saveSettings();
-        }));
+        }))
+      .addExtraButton((b) => b
+        .setIcon('refresh-cw')
+        .setTooltip('Look for voices again')
+        .onClick(() => this.check()));
   }
 }
 

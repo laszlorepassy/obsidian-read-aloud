@@ -17,8 +17,17 @@ const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
+/** Obsidian's own settings folder, which lists the vaults. */
+function obsidianConfigDir() {
+  if (process.platform === 'win32') return path.join(process.env.APPDATA || '', 'obsidian');
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'obsidian');
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'obsidian');
+}
+
 function openVaults() {
-  const config = path.join(os.homedir(), '.config', 'obsidian', 'obsidian.json');
+  const config = path.join(obsidianConfigDir(), 'obsidian.json');
   try {
     const vaults = JSON.parse(fs.readFileSync(config, 'utf8')).vaults || {};
     return Object.values(vaults).filter((v) => v.open).map((v) => v.path);

@@ -13,6 +13,7 @@ test('main.js builds and exports the plugin class', () => {
   class Plugin {}
   const obsidian = { Plugin, PluginSettingTab: class {}, Setting: class {}, Notice: class {},
     MarkdownView: class {}, FileSystemAdapter: class {}, Modal: class {}, MarkdownRenderer: {},
+    PluginSettingTab: class {},
     setIcon() {}, setTooltip() {} };
   const load = Module._load;
   Module._load = function (request, ...rest) {

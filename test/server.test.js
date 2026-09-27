@@ -32,7 +32,7 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
     onError: (err) => { throw err; },
   });
   try {
-    await client.start(CALIBRE);
+    await client.start({ command: CALIBRE, args: [] });
     client.setVoice(path.join(VOICES, voice), 1.0);
     client.speak(1, 'Ezt a mondatot nem kell végighallgatni. Mert úgyis megszakítjuk. Harmadik mondat.');
     client.cancel();
@@ -43,6 +43,13 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
     assert.strictEqual(second.length, 2);
     assert.ok(second.every((c) => c.rate === 22050 && c.n > 10000));
     assert.deepStrictEqual(second.map((c) => c.last), [false, true]);
+
+    const { voices, dir } = await client.catalog();
+    assert.strictEqual(dir, client.info.voicesDir);
+    assert.ok(voices.length > 100, 'calibre knows over a hundred voices');
+    assert.ok(voices.some((v) => v.key === voice.slice(0, -5) && v.installed));
+    const empty = await client.catalog(dir + '-does-not-exist');
+    assert.ok(empty.voices.every((v) => !v.installed));
   } finally {
     client.stop();
     fs.rmSync(dir, { recursive: true, force: true });
