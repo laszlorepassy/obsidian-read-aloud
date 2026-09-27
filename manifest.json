@@ -1,10 +1,11 @@
 {
   "id": "read-aloud",
   "name": "Read Aloud",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "minAppVersion": "1.4.4",
-  "description": "Reads the current note aloud with a local Piper voice (via calibre), paragraph by paragraph, softly highlighting the part being read.",
+  "description": "Read notes aloud sentence by sentence with a natural Piper voice that runs on your computer (through calibre), highlighting the sentence being read.",
   "author": "Laszlo Repassy",
-  "authorUrl": "",
+  "authorUrl": "https://github.com/laszlorepassy",
+  "fundingUrl": "https://paypal.me/repassyl",
   "isDesktopOnly": true
 }

@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Cuts a Markdown note into the sentences that are read aloud one at a time.
  *
@@ -144,9 +142,9 @@ function speakable(source) {
   s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {       // HTML entities
     if (e[0] !== '#') return ENTITIES[e.toLowerCase()] || m;
     const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-    try { return String.fromCodePoint(code); } catch (err) { return ' '; }
+    try { return String.fromCodePoint(code); } catch { return ' '; }
   });
-  s = s.replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, ' '); // emoji
+  s = s.replace(/\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]|\u{FE0F}|\u{200D}/gu, ' '); // emoji
   if (/^\s*\|/.test(s)) {                                       // table row
     s = s.split('|').map((c) => c.trim()).filter(Boolean).join(', ');
   }
@@ -296,4 +294,4 @@ function segment(source, { maxLength = 300 } = {}) {
   return result;
 }
 
-module.exports = { segment, speakable, blocks, cut, sentenceStarts };
+export { segment, speakable, blocks, cut, sentenceStarts };

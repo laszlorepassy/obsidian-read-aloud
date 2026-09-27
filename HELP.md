@@ -143,7 +143,7 @@ computer.
 - **Right-click** in the text → **Read aloud from here**: starts at the
   sentence you clicked.
 - **Command palette** (Ctrl+P, Cmd+P on a Mac):
-  - *Read Aloud: Read from cursor*
+  - *Read Aloud: Read from the cursor*
   - *Read Aloud: Read note from the start*
 
 In reading view, reading starts at the top of the screen.

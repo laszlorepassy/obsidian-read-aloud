@@ -1,9 +1,7 @@
-'use strict';
-
-const test = require('node:test');
-const assert = require('node:assert');
-const { EditorState } = require('@codemirror/state');
-const { readingField, setReadingForTest } = require('../src/highlight');
+import test from 'node:test';
+import assert from 'node:assert';
+import { EditorState } from '@codemirror/state';
+import { readingField, setReadingForTest } from '../src/highlight.js';
 
 test('the highlight follows edits made before and inside it', () => {
   let state = EditorState.create({ doc: 'Első bekezdés.\n\nMásodik bekezdés.', extensions: [readingField] });

@@ -1,9 +1,11 @@
-'use strict';
+import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const SERVER_SOURCE = require('./piper_server.py');
+// Obsidian asks for the window's timers (for pop-out windows); the tests
+// run without a window.
+const timers = typeof window === 'undefined' ? { setTimeout, clearTimeout } : window;
+
 
 /**
  * Talks to piper_server.py running in calibre's Python. The server is started
@@ -17,7 +19,8 @@ const SERVER_SOURCE = require('./piper_server.py');
  * { model, voiceFailed } for a voice) or { crashed: true }.
  */
 class PiperClient {
-  constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
+  constructor({ serverSource, scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
+    this.serverSource = serverSource;   // the text of piper_server.py
     this.scriptDir = scriptDir;
     this.info = null;           // the server's "ready" message: calibre version, voices folder
     this.catalogWaiters = [];
@@ -37,8 +40,8 @@ class PiperClient {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'piper_server.py');
     let current = null;
-    try { current = fs.readFileSync(file, 'utf8'); } catch (e) { /* not written yet */ }
-    if (current !== SERVER_SOURCE) fs.writeFileSync(file, SERVER_SOURCE);
+    try { current = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
+    if (current !== this.serverSource) fs.writeFileSync(file, this.serverSource);
     return file;
   }
 
@@ -77,7 +80,7 @@ class PiperClient {
       // Writing to a server that just died fails with EPIPE; the exit
       // handler reports that, the stream must not throw it into Obsidian.
       proc.stdin.on('error', () => {});
-      const timeout = setTimeout(() => {
+      const timeout = timers.setTimeout(() => {
         if (started) return;
         reject(new Error(`Piper did not start in ${this.startMs / 1000} seconds.\n${stderr.trim()}`));
         this.stop();
@@ -96,7 +99,7 @@ class PiperClient {
             const brace = line.indexOf('{"');
             if (brace === -1) continue;
             line = line.slice(brace);
-            try { header = JSON.parse(line); } catch (e) { continue; }
+            try { header = JSON.parse(line); } catch { continue; }
             if (!header || !Number.isInteger(header.bytes) || header.bytes < 0) {
               header = null;
               continue;
@@ -107,7 +110,7 @@ class PiperClient {
           buffer = buffer.subarray(header.bytes);
           const h = header;
           header = null;
-          if (h.ready) { started = true; clearTimeout(timeout); this.info = h; resolve(h); continue; }
+          if (h.ready) { started = true; timers.clearTimeout(timeout); this.info = h; resolve(h); continue; }
           if (h.voiceFailed) this.voiceKey = null;   // so it is tried again
           if (h.fatal) { reject(new Error(h.error)); continue; }
           if (h.catalog) { this.gotCatalog(h); continue; }
@@ -119,12 +122,12 @@ class PiperClient {
       });
       proc.stderr.on('data', (d) => { stderr = (stderr + d.toString()).slice(-4000); });
       proc.on('error', (err) => {
-        clearTimeout(timeout);
+        timers.clearTimeout(timeout);
         if (!started) reject(err);
         this.forget(proc, err);
       });
       proc.on('exit', (code, signal) => {
-        clearTimeout(timeout);
+        timers.clearTimeout(timeout);
         const how = signal ? `signal ${signal}` : `exit code ${code}`;
         const gone = new Error(`Piper stopped (${how}).\n${stderr.trim()}`);
         this.forget(proc, gone);
@@ -229,19 +232,19 @@ class PiperClient {
   }
 
   touch() {
-    clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => (this.isBusy() || this.downloads.size ? this.touch() : this.stop()),
+    timers.clearTimeout(this.idleTimer);
+    this.idleTimer = timers.setTimeout(() => (this.isBusy() || this.downloads.size ? this.touch() : this.stop()),
       this.idleMs);
   }
 
   stop() {
-    clearTimeout(this.idleTimer);
+    timers.clearTimeout(this.idleTimer);
     const proc = this.proc;
     if (!proc) return;
     proc.killedByUs = true;
     this.forget(proc);
-    try { proc.stdin.end(); } catch (e) { /* already closed */ }
-    setTimeout(() => { if (proc.exitCode === null) proc.kill(); }, 1000);
+    try { proc.stdin.end(); } catch { /* already closed */ }
+    timers.setTimeout(() => { if (proc.exitCode === null) proc.kill(); }, 1000);
   }
 }
 
@@ -251,4 +254,4 @@ function toFloat32(pcm) {
   return samples;
 }
 
-module.exports = { PiperClient };
+export { PiperClient };

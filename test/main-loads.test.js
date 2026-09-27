@@ -14,14 +14,15 @@ test('main.js builds and exports the plugin class', () => {
   const obsidian = { Plugin, PluginSettingTab: class {}, Setting: class {}, Notice: class {},
     MarkdownView: class {}, FileSystemAdapter: class {}, Modal: class {}, MarkdownRenderer: {}, Component: class {},
     PluginSettingTab: class {},
-    setIcon() {}, setTooltip() {} };
+    setIcon() {}, setTooltip() {}, getLanguage: () => 'en' };
   const load = Module._load;
   Module._load = function (request, ...rest) {
     if (request === 'obsidian') return obsidian;
     return load.call(this, request, ...rest);
   };
   try {
-    const ReadAloud = require(path.join(root, 'main.js'));
+    const bundle = require(path.join(root, 'main.js'));
+    const ReadAloud = bundle.default || bundle;
     assert.strictEqual(typeof ReadAloud, 'function');
     assert.ok(ReadAloud.prototype instanceof Plugin);
   } finally {

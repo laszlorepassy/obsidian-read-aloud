@@ -1,18 +1,17 @@
-'use strict';
-
-const {
+import {
   Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
-  Component, setIcon, setTooltip,
-} = require('obsidian');
-const os = require('os');
-const path = require('path');
-const { segment, speakable: segmentText } = require('./segmenter');
-const { matchText, keyLength } = require('./text-match');
-const { PiperClient } = require('./piper-client');
-const { findCalibre } = require('./calibre');
-const voices = require('./voices');
-const { readingField, showReading, readingRange } = require('./highlight');
-const HELP = require('../HELP.md');
+  Component, setIcon, setTooltip, getLanguage,
+} from 'obsidian';
+import * as os from 'os';
+import * as path from 'path';
+import { segment, speakable as segmentText } from './segmenter.js';
+import { matchText, keyLength } from './text-match.js';
+import { PiperClient } from './piper-client.js';
+import { findCalibre } from './calibre.js';
+import * as voices from './voices.js';
+import { readingField, showReading, readingRange } from './highlight.js';
+import HELP from '../HELP.md';
+import SERVER_SOURCE from './piper_server.py';
 
 const DEFAULT_SETTINGS = {
   calibreDebug: '',   // empty: found automatically
@@ -26,11 +25,12 @@ const DEFAULT_SETTINGS = {
 
 /**
  * The user's languages, most preferred first, e.g. ['hu-HU', 'en-US']: the
- * system's, which notes are most likely written in, then Obsidian's own.
+ * system's, which notes are most likely written in, then Obsidian's own
+ * (getLanguage exists since Obsidian 1.8.7).
  */
 function userLocales() {
   const list = [...(navigator.languages || []), navigator.language || ''];
-  try { list.push(window.localStorage.getItem('language') || ''); } catch (e) { /* no storage */ }
+  if (typeof getLanguage === 'function') list.push(getLanguage());
   return list.filter(Boolean);
 }
 
@@ -42,6 +42,7 @@ class ReadAloudPlugin extends Plugin {
     this.nextTrackId = 1;
 
     this.piper = new PiperClient({
+      serverSource: SERVER_SOURCE,
       scriptDir: this.pluginDir(),
       onAudio: (id, samples, rate, last) => this.onAudio(id, samples, rate, last),
       onError: (err, info) => this.onPiperError(err, info),
@@ -56,7 +57,7 @@ class ReadAloudPlugin extends Plugin {
 
     this.addCommand({
       id: 'read-from-cursor',
-      name: 'Read from cursor',
+      name: 'Read from the cursor',
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) return false;
@@ -189,7 +190,7 @@ class ReadAloudPlugin extends Plugin {
   stopTest() {
     if (!this.test) return;
     for (const s of this.test.sources) {
-      try { s.stop(); } catch (e) { /* not started */ }
+      try { s.stop(); } catch { /* not started */ }
     }
     this.test = null;
     this.piper.cancel();
@@ -199,7 +200,7 @@ class ReadAloudPlugin extends Plugin {
     try {
       this.app.setting.open();
       this.app.setting.openTabById(this.manifest.id);
-    } catch (e) { /* internal API changed */ }
+    } catch { /* internal API changed */ }
   }
 
   // ------------------------------------------------------------ starting
@@ -259,7 +260,7 @@ class ReadAloudPlugin extends Plugin {
     if (this.session !== session) return;   // stopped while loading
     if (!session.model) {
       this.stop();
-      new Notice('No voice is installed yet. Download one in Settings → Read Aloud.', 10000);
+      new Notice('No voice is installed yet. Download one in the settings, which open now.', 10000);
       this.openSettings();
       return;
     }
@@ -276,7 +277,7 @@ class ReadAloudPlugin extends Plugin {
           return cm.state.doc.line(Math.min(s.lineStart + 1, cm.state.doc.lines)).from;
         }
       }
-    } catch (e) { /* internal API changed; start from the top */ }
+    } catch { /* internal API changed; start from the top */ }
     return 0;
   }
 
@@ -474,7 +475,7 @@ class ReadAloudPlugin extends Plugin {
       track.finished = true;
       for (const s of track.sources || []) {
         s.onended = null;
-        try { s.stop(); } catch (e) { /* not started */ }
+        try { s.stop(); } catch { /* not started */ }
       }
     }
   }
@@ -486,7 +487,7 @@ class ReadAloudPlugin extends Plugin {
     this.session = null;
     this.piper.cancel();
     if (this.audio && session.paused) this.audio.resume();
-    try { showReading(session.cm, null, false); } catch (e) { /* editor gone */ }
+    try { showReading(session.cm, null, false); } catch { /* editor gone */ }
     this.clearPreviewHighlight();
     this.updateStatus();
   }
@@ -577,11 +578,11 @@ class ReadAloudPlugin extends Plugin {
         const el = marked.startContainer.parentElement;
         if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
-    } catch (e) { /* reading view internals changed; just no highlight there */ }
+    } catch { /* reading view internals changed; just no highlight there */ }
   }
 
   clearPreviewHighlight() {
-    try { if (this.previewWin) this.previewWin.CSS.highlights.delete('readaloud-current'); } catch (e) { /* closed */ }
+    try { if (this.previewWin) this.previewWin.CSS.highlights.delete('readaloud-current'); } catch { /* closed */ }
     this.previewWin = null;
   }
 
@@ -639,7 +640,7 @@ class ReadAloudPlugin extends Plugin {
     try {
       const model = await this.voiceModel();
       if (model && this.session) this.session.model = model;
-    } catch (e) { /* keep the voice it had */ }
+    } catch { /* keep the voice it had */ }
   }
 
   async saveSettings() {
@@ -704,7 +705,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('User guide')
-      .setDesc('Installing calibre and voices on Windows, macOS and Linux, and using Read Aloud.')
+      .setDesc('Setting up calibre and voices on Windows, macOS and Linux, and how to use the plugin.')
       .addButton((b) => b
         .setButtonText('Open help')
         .onClick(() => new HelpModal(this.app, this.plugin).open()));
@@ -778,7 +779,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Speed')
-      .setDesc('1 is the voice\'s own pace. Changing it reloads the voice (a few seconds).')
+      .setDesc('At 1, the voice keeps its own pace. Changing the speed reloads the voice (a few seconds).')
       .addSlider((sl) => sl
         .setLimits(0.6, 2, 0.05)
         .setValue(settings.speed)
@@ -964,4 +965,4 @@ class HelpModal extends Modal {
   }
 }
 
-module.exports = ReadAloudPlugin;
+export default ReadAloudPlugin;

@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Helpers for the list of Piper voices the speech server sends: entries of
  * { key: 'hu_HU-anna-medium', lang: 'hu_HU', name: 'anna', quality: 'medium',
@@ -17,7 +15,7 @@ function languageName(lang) {
     let name = lang;
     try {
       name = new Intl.DisplayNames(['en'], { type: 'language' }).of(lang.replace('_', '-')) || lang;
-    } catch (e) { /* not a language code Intl knows */ }
+    } catch { /* not a language code Intl knows */ }
     languageNames.set(lang, name);
   }
   return languageNames.get(lang);
@@ -118,7 +116,7 @@ function sampleText(v) {
   return SAMPLES[language] || `${capitalize(v.name)}.`;
 }
 
-module.exports = {
+export {
   languageName, voiceName, voiceLabel, languages, preferredLanguage, chooseVoice, sampleText,
   byLanguageThenName,
 };

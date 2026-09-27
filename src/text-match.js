@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Finds a sentence in rendered text, for the highlight in reading view.
  *
@@ -47,4 +45,4 @@ function keyLength(text) {
   return n;
 }
 
-module.exports = { matchText, keyLength };
+export { matchText, keyLength };

@@ -1,7 +1,5 @@
-'use strict';
-
-const { StateField, StateEffect } = require('@codemirror/state');
-const { Decoration, EditorView } = require('@codemirror/view');
+import { StateField, StateEffect } from '@codemirror/state';
+import { Decoration, EditorView } from '@codemirror/view';
 
 /**
  * The editor side of the highlight: one soft mark over the sentence being
@@ -57,6 +55,9 @@ function readingRange(view) {
   return value ? value.range : null;
 }
 
-module.exports = {
-  readingField, showReading, readingRange, setReadingForTest: (range) => setReading.of(range),
-};
+/** The effect that sets the highlight, for the tests. */
+function setReadingForTest(range) {
+  return setReading.of(range);
+}
+
+export { readingField, showReading, readingRange, setReadingForTest };

@@ -6,16 +6,13 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const Module = require('module');
 
 const CALIBRE = '/opt/calibre/calibre-debug';
 const VOICES = path.join(os.homedir(), '.cache', 'calibre', 'piper-voices');
 const voice = fs.existsSync(VOICES) && fs.readdirSync(VOICES).find((f) => f.endsWith('.onnx'));
 
-// piper-client.js requires the .py file as text, as esbuild bundles it.
-Module._extensions['.py'] = (module, filename) => {
-  module.exports = fs.readFileSync(filename, 'utf8');
-};
+// esbuild bundles the server script as text; here it is read from its file.
+const serverSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'piper_server.py'), 'utf8');
 const { PiperClient } = require('../src/piper-client');
 
 test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
@@ -24,6 +21,7 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
   const done = new Promise((r) => { resolveDone = r; });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
   const client = new PiperClient({
+    serverSource,
     scriptDir: dir,
     onAudio: (id, samples, rate, last) => {
       chunks.push({ id, n: samples.length, rate, last });
@@ -59,7 +57,7 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
 test('a server killed from outside is reported, and waiting requests fail', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const errors = [];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: (e) => errors.push(e) });
+  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: (e) => errors.push(e) });
   try {
     await client.start({ command: CALIBRE, args: [] });
     const proc = client.proc;
@@ -79,7 +77,7 @@ test('a server killed from outside is reported, and waiting requests fail', { sk
 
 test('stopping one server does not fail requests to the next one', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: () => {} });
   try {
     await client.start({ command: CALIBRE, args: [] });
     client.stop();                      // like "Check again"
@@ -94,7 +92,7 @@ test('stopping one server does not fail requests to the next one', { skip: !(fs.
 
 test('stopping while starting leaves no stray server', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
-  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  const client = new PiperClient({ serverSource, scriptDir: dir, onAudio: () => {}, onError: () => {} });
   try {
     const first = client.start({ command: CALIBRE, args: [] });
     const firstProc = client.proc;

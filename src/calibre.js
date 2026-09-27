@@ -1,9 +1,7 @@
-'use strict';
-
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { spawnSync } from 'child_process';
 
 const FLATPAK_ID = 'com.calibre_ebook.calibre';
 
@@ -57,7 +55,7 @@ function defaultExists(file) {
   if (!process.env.FLATPAK_ID) return fs.existsSync(file);
   try {
     return spawnSync('flatpak-spawn', ['--host', 'test', '-e', file], { timeout: 5000 }).status === 0;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -81,7 +79,7 @@ function configuredPath(typed, platform = process.platform, isDir = defaultIsDir
 function defaultIsDir(file) {
   try {
     return fs.statSync(file).isDirectory();
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -99,4 +97,4 @@ function findCalibre(configured, opts = {}) {
   return candidates(opts).find((c) => exists(c.file)) || null;
 }
 
-module.exports = { findCalibre, candidates, configuredPath };
+export { findCalibre, candidates, configuredPath };
