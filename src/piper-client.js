@@ -15,7 +15,7 @@ const SERVER_SOURCE = require('./piper_server.py');
  * last)`, samples as a Float32Array in [-1, 1].
  */
 class PiperClient {
-  constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10 }) {
+  constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
     this.scriptDir = scriptDir;
     this.info = null;           // the server's "ready" message: calibre version, voices folder
     this.catalogWaiters = [];
@@ -24,6 +24,7 @@ class PiperClient {
     this.onError = onError;
     this.isBusy = isBusy || (() => false);
     this.idleMs = idleMinutes * 60 * 1000;
+    this.startMs = startSeconds * 1000;
     this.proc = null;
     this.ready = null;
     this.voiceKey = null;
@@ -70,6 +71,14 @@ class PiperClient {
       let header = null;
       let stderr = '';
       let started = false;
+      // Writing to a server that just died fails with EPIPE; the exit
+      // handler reports that, the stream must not throw it into Obsidian.
+      proc.stdin.on('error', () => {});
+      const timeout = setTimeout(() => {
+        if (started) return;
+        reject(new Error(`Piper did not start in ${this.startMs / 1000} seconds.\n${stderr.trim()}`));
+        this.stop();
+      }, this.startMs);
 
       proc.stdout.on('data', (data) => {
         buffer = buffer.length ? Buffer.concat([buffer, data]) : data;
@@ -77,9 +86,12 @@ class PiperClient {
           if (!header) {
             const nl = buffer.indexOf(10);
             if (nl === -1) return;
-            const line = buffer.subarray(0, nl).toString('utf8');
+            let line = buffer.subarray(0, nl).toString('utf8');
             buffer = buffer.subarray(nl + 1);
-            if (!line.startsWith('{')) continue;   // anything calibre prints
+            // Skip anything else calibre prints, even without a line end.
+            const brace = line.indexOf('{"');
+            if (brace === -1) continue;
+            line = line.slice(brace);
             try { header = JSON.parse(line); } catch (e) { continue; }
           }
           if (buffer.length < header.bytes) return;
@@ -87,7 +99,8 @@ class PiperClient {
           buffer = buffer.subarray(header.bytes);
           const h = header;
           header = null;
-          if (h.ready) { started = true; this.info = h; resolve(h); continue; }
+          if (h.ready) { started = true; clearTimeout(timeout); this.info = h; resolve(h); continue; }
+          if (h.voiceFailed) this.voiceKey = null;   // so it is tried again
           if (h.fatal) { reject(new Error(h.error)); continue; }
           if (h.catalog) { this.gotCatalog(h); continue; }
           if (h.download) { this.gotDownload(h); continue; }
@@ -98,18 +111,18 @@ class PiperClient {
       });
       proc.stderr.on('data', (d) => { stderr = (stderr + d.toString()).slice(-4000); });
       proc.on('error', (err) => {
+        clearTimeout(timeout);
         if (!started) reject(err);
-        this.forget(proc);
+        this.forget(proc, err);
       });
-      proc.on('exit', (code) => {
-        this.forget(proc);
-        const gone = new Error(`Piper stopped (exit code ${code}).\n${stderr.trim()}`);
-        for (const w of this.catalogWaiters.splice(0)) w.reject(gone);
-        for (const d of this.downloads.values()) d.reject(gone);
-        this.downloads.clear();
+      proc.on('exit', (code, signal) => {
+        clearTimeout(timeout);
+        const how = signal ? `signal ${signal}` : `exit code ${code}`;
+        const gone = new Error(`Piper stopped (${how}).\n${stderr.trim()}`);
+        this.forget(proc, gone);
         if (!started) {
-          reject(new Error(`Piper did not start (exit code ${code}).\n${stderr.trim()}`));
-        } else if (code && code !== 0 && !proc.killedByUs) {
+          reject(new Error(`Piper did not start (${how}).\n${stderr.trim()}`));
+        } else if (!proc.killedByUs) {
           this.onError(gone);
         }
       });
@@ -118,17 +131,29 @@ class PiperClient {
     return this.ready;
   }
 
-  forget(proc) {
+  /**
+   * Lets go of a server that stopped or is being stopped, failing what was
+   * still waiting for its answer. A server started since is left alone.
+   */
+  forget(proc, why) {
     if (this.proc !== proc) return;
     this.proc = null;
     this.ready = null;
     this.voiceKey = null;
     this.info = null;
+    const err = why || new Error('Piper was stopped.');
+    for (const w of this.catalogWaiters.splice(0)) w.reject(err);
+    for (const d of this.downloads.values()) d.reject(err);
+    this.downloads.clear();
   }
 
   /** The voices calibre knows, with `installed` set for those in `dir`. */
   catalog(dir) {
     return new Promise((resolve, reject) => {
+      if (!this.proc) {
+        reject(new Error('Piper is not running.'));
+        return;
+      }
       this.catalogWaiters.push({ resolve, reject });
       this.send({ cmd: 'catalog', dir: dir || undefined });
     });
@@ -141,6 +166,7 @@ class PiperClient {
 
   /** Downloads a voice from calibre's list into `dir`. */
   download(key, dir, onProgress) {
+    if (!this.proc) return Promise.reject(new Error('Piper is not running.'));
     if (this.downloads.has(key)) return this.downloads.get(key).promise;
     const entry = { onProgress };
     entry.promise = new Promise((resolve, reject) => {

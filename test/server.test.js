@@ -55,3 +55,39 @@ test('speaks sentence by sentence and honors cancel', { skip: !(fs.existsSync(CA
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a server killed from outside is reported, and waiting requests fail', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
+  const errors = [];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
+  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: (e) => errors.push(e) });
+  try {
+    await client.start({ command: CALIBRE, args: [] });
+    const proc = client.proc;
+    const waiting = client.catalog();
+    proc.kill('SIGKILL');
+    await assert.rejects(waiting);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.match(errors[0].message, /signal SIGKILL/);
+    assert.strictEqual(client.proc, null);
+    // Writing to it afterwards must not throw.
+    client.send({ cmd: 'cancel' });
+  } finally {
+    client.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stopping one server does not fail requests to the next one', { skip: !(fs.existsSync(CALIBRE) && voice) }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readaloud-'));
+  const client = new PiperClient({ scriptDir: dir, onAudio: () => {}, onError: () => {} });
+  try {
+    await client.start({ command: CALIBRE, args: [] });
+    client.stop();                      // like "Check again"
+    await client.start({ command: CALIBRE, args: [] });
+    const { voices } = await client.catalog();
+    assert.ok(voices.length > 100);
+  } finally {
+    client.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

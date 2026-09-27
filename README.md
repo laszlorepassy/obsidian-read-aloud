@@ -1,8 +1,8 @@
 # Read Aloud
 
 An Obsidian plugin that reads the current note aloud with a local
-[Piper](https://github.com/rhasspy/piper) voice, one paragraph at a time,
-with a soft highlight on the part being read. Works on Windows, macOS and
+[Piper](https://github.com/rhasspy/piper) voice, sentence by sentence,
+with a soft highlight on the sentence being read. Works on Windows, macOS and
 Linux desktops.
 
 Nothing leaves the computer while reading. The speaking is done by the
@@ -16,20 +16,22 @@ command and from the settings page.
 
 ## How it works
 
-- The note is cut into pieces: paragraphs, headings, list items, table
-  rows. A paragraph longer than 300 characters (adjustable) is cut
-  between sentences. Front matter, code blocks, math, comments, embeds
-  and link targets are skipped; Markdown syntax is not spoken.
+- The note is cut into sentences, each knowing its block (paragraph,
+  heading, list item, table row); a sentence longer than 300 characters
+  (adjustable) is cut at commas. Front matter, code blocks, math,
+  comments, embeds and link targets are skipped; Markdown syntax is not
+  spoken.
 - calibre-debug is found in its usual place on each system
   (`src/calibre.js`), including calibre from Flathub.
 - A small speech server (`src/piper_server.py`) runs inside calibre's
   Python and keeps the voice loaded, so only the first start takes a few
-  seconds. It sends the audio sentence by sentence, so reading starts
-  about half a second after a piece is sent. The next piece is prepared
-  while the current one is read, so there is no gap between them. After
+  seconds. Reading starts about half a second after a sentence is sent,
+  and the next sentence is prepared while the current one is read, so
+  there is no gap between them. After
   10 minutes with nothing to read, the server stops and frees its memory.
-- The piece being read gets a light accent-colored background, in the
-  editor and in reading view too, and is scrolled into view. You can
+- The sentence being read gets a light accent-colored background, in the
+  editor and (as a CSS custom highlight over the rendered text) in reading
+  view too, and is scrolled into view. You can
   keep editing the note while it is read: the highlight and the reading
   position move along with your edits.
 
@@ -39,9 +41,10 @@ command and from the settings page.
   reading, it pauses and resumes.
 - **Right-click in the editor → Read aloud from here.**
 - **Commands** (to bind hotkeys to): *Read from cursor*, *Read note from
-  the start*, *Pause / resume*, *Stop reading*, *Next paragraph*,
-  *Previous paragraph*, *Help*.
-- The **status bar** shows pause/resume and stop buttons while reading.
+  the start*, *Pause / resume*, *Stop reading*, *Next / Previous
+  sentence*, *Next / Previous paragraph*, *Help*.
+- The **status bar** shows previous sentence, pause/resume, next sentence
+  and stop buttons while reading.
 
 In reading view, reading starts at the top of the screen.
 

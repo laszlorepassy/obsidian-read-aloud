@@ -18,7 +18,7 @@ test('skips front matter, code, math and comments', () => {
   assert.deepStrictEqual(texts(src), ['Első bekezdés.', 'Utolsó bekezdés.']);
 });
 
-test('headings, list items, callouts and table rows are separate pieces', () => {
+test('headings, list items, callouts and table rows are separate blocks', () => {
   const src = [
     '# Cím', '',
     '- első', '- [x] második', '  folytatás', '1. harmadik', '',
@@ -27,13 +27,21 @@ test('headings, list items, callouts and table rows are separate pieces', () => 
   ].join('\n');
   assert.deepStrictEqual(texts(src), [
     'Cím', 'első', 'második folytatás', 'harmadik',
-    'Megjegyzés', 'Szöveg. Még egy sor.', 'Név, Kor', 'Anna, 30',
+    'Megjegyzés', 'Szöveg.', 'Még egy sor.', 'Név, Kor', 'Anna, 30',
   ]);
 });
 
 test('lines of one paragraph stay together', () => {
   assert.deepStrictEqual(texts('Egy sor\nmásik sor.\n\nÚj bekezdés.'),
     ['Egy sor másik sor.', 'Új bekezdés.']);
+});
+
+test('sentences know their paragraph', () => {
+  const src = 'Első. Második?\n\nHarmadik!';
+  const s = segment(src);
+  assert.deepStrictEqual(s.map((x) => src.slice(x.from, x.to)), ['Első.', 'Második?', 'Harmadik!']);
+  assert.deepStrictEqual(s.map((x) => src.slice(x.block.from, x.block.to)),
+    ['Első. Második?', 'Első. Második?', 'Harmadik!']);
 });
 
 test('ranges point at the source text without its Markdown prefix', () => {
@@ -52,14 +60,11 @@ test('Markdown syntax is not spoken', () => {
   assert.strictEqual(speakable('---'), '');
 });
 
-test('long paragraphs are cut between sentences', () => {
+test('a paragraph is read sentence by sentence', () => {
   const sentence = 'Ez egy mondat, amely körülbelül hatvan karakter hosszú lesz. ';
   const pieces = segment(sentence.repeat(10).trim(), { maxLength: 200 });
-  assert.ok(pieces.length >= 4);
-  for (const p of pieces) {
-    assert.ok(p.to - p.from <= 200, `${p.to - p.from} > 200`);
-    assert.match(p.text, /^Ez egy mondat.*hosszú lesz\.$/);
-  }
+  assert.strictEqual(pieces.length, 10);
+  for (const p of pieces) assert.strictEqual(p.text, sentence.trim());
 });
 
 test('ordinal numbers and abbreviations do not end a sentence', () => {
@@ -75,4 +80,11 @@ test('an endless sentence is cut at commas, then between words', () => {
   const words = segment('szó '.repeat(200).trim(), { maxLength: 100 });
   assert.ok(words.every((p) => p.to - p.from <= 100));
   assert.strictEqual(words.map((p) => p.text).join(' ').split(' ').length, 200);
+});
+
+test('heading closers, HTML entities, emoji and footnote marks are not spoken', () => {
+  assert.deepStrictEqual(texts('## Cím ##'), ['Cím']);
+  assert.strictEqual(speakable('Tom &amp; Jerry&nbsp;és &lt;b&gt; &#8211; &#x41;'), 'Tom & Jerry és <b> – A');
+  assert.strictEqual(speakable('Kész ✅ és 😀 jó 🇭🇺'), 'Kész és jó');
+  assert.deepStrictEqual(texts('Szöveg.[^1]\n\n[^1]: A lábjegyzet.'), ['Szöveg.', 'A lábjegyzet.']);
 });

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const FLATPAK_ID = 'com.calibre_ebook.calibre';
 
@@ -49,11 +50,24 @@ function candidates({ platform = process.platform, env = process.env, home = os.
 }
 
 /**
+ * Whether a file exists. Inside a Flatpak sandbox (Obsidian from Flathub)
+ * the places calibre is installed to are not visible, so the host is asked.
+ */
+function defaultExists(file) {
+  if (!process.env.FLATPAK_ID) return fs.existsSync(file);
+  try {
+    return spawnSync('flatpak-spawn', ['--host', 'test', '-e', file], { timeout: 5000 }).status === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * How to run calibre-debug: the path given in the settings if there is one,
  * else the first usual place where calibre is installed. Null if none.
  */
 function findCalibre(configured, opts = {}) {
-  const exists = opts.exists || fs.existsSync;
+  const exists = opts.exists || defaultExists;
   if (configured) {
     return { file: configured, command: configured, args: [], label: configured };
   }

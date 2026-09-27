@@ -8,15 +8,19 @@
 
 const QUALITY_ORDER = ['medium', 'high', 'low', 'x_low', ''];
 
+const languageNames = new Map();
+
 /** "hu_HU" → "Hungarian (Hungary)", in English. */
 function languageName(lang) {
   if (!lang) return 'Other';
-  try {
-    const names = new Intl.DisplayNames(['en'], { type: 'language' });
-    return names.of(lang.replace('_', '-')) || lang;
-  } catch (e) {
-    return lang;
+  if (!languageNames.has(lang)) {
+    let name = lang;
+    try {
+      name = new Intl.DisplayNames(['en'], { type: 'language' }).of(lang.replace('_', '-')) || lang;
+    } catch (e) { /* not a language code Intl knows */ }
+    languageNames.set(lang, name);
   }
+  return languageNames.get(lang);
 }
 
 function capitalize(s) {

@@ -222,7 +222,7 @@ def main():
             except Exception as e:
                 loaded = None
                 send({"error": "Could not load the voice %s: %s"
-                      % (wanted[0], e)})
+                      % (wanted[0], e), "voiceFailed": True})
         elif cmd == "speak":
             speak(engine, req, loaded)
 

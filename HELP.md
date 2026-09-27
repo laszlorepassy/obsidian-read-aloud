@@ -1,7 +1,7 @@
 # Read Aloud – user guide
 
-Read Aloud reads the open note aloud, one paragraph at a time, and softly
-highlights where it is. The voice is **Piper**, a neural text-to-speech
+Read Aloud reads the open note aloud, sentence by sentence, and softly
+highlights the sentence being read. The voice is **Piper**, a neural text-to-speech
 engine that runs on your own computer: no internet connection is needed
 while reading, and your notes never leave your computer.
 
@@ -141,17 +141,17 @@ computer.
 
 - **Speaker icon** in the left ribbon: starts at the cursor.
 - **Right-click** in the text → **Read aloud from here**: starts at the
-  paragraph you clicked.
+  sentence you clicked.
 - **Command palette** (Ctrl+P, Cmd+P on a Mac):
   - *Read Aloud: Read from cursor*
   - *Read Aloud: Read note from the start*
 
-In reading view, reading starts at the paragraph at the top of the screen.
+In reading view, reading starts at the top of the screen.
 
 The first start takes a few seconds while calibre starts and the voice
-loads; meanwhile the status bar shows "Starting…". After that, each
-paragraph is read almost immediately, and the next one is prepared while
-the current one is read, so there are no waits between them.
+loads; meanwhile the status bar shows "Starting…". After that, reading
+starts almost immediately, and the next sentence is prepared while the
+current one is read, so there are no waits between them.
 
 ### Controls while reading
 
@@ -159,7 +159,9 @@ While reading, the controls appear in the status bar at the bottom right:
 
 | Button | What it does |
 |---|---|
+| ‹ | Back one sentence (or, more than two seconds into a sentence, to its start) |
 | ⏸ / ▶ | Pause / resume |
+| › | Forward one sentence |
 | ⏹ | Stop |
 
 The speaker icon in the ribbon also pauses and resumes.
@@ -169,17 +171,19 @@ These are commands too, and you can give them hotkeys under
 
 - *Pause / resume*
 - *Stop reading*
-- *Next paragraph* – skips the current one
-- *Previous paragraph* – goes back one
+- *Next sentence* / *Previous sentence*
+- *Next paragraph* / *Previous paragraph* – skips to the start of the next
+  paragraph, or back to the start of the previous one
 
-Tip: Ctrl+Alt+Space for pause/resume and Ctrl+Alt+→ / Ctrl+Alt+← for next
-and previous paragraph work well.
+Tip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+→ / Ctrl+Alt+← for next and
+previous sentence, and Ctrl+Alt+↓ / Ctrl+Alt+↑ for next and previous
+paragraph work well.
 
 ### What is read, and what is not
 
-Paragraphs, headings, list items, quotes and table rows are read, each as a
-separate piece. Long paragraphs are cut into smaller pieces between
-sentences (300 characters at most by default), so reading never slows down.
+Paragraphs, headings, list items, quotes and table rows are read, sentence
+by sentence. An unusually long sentence is cut at commas (at 300
+characters by default), so reading never slows down.
 
 Left out:
 
@@ -192,7 +196,9 @@ Left out:
 ### Editing while reading
 
 You can keep typing in the note while it is read: the highlight and the
-reading position move along with your edits. Opening another note in the
+reading position move along with your edits.
+
+In reading view, the sentence is highlighted in the rendered text too. Opening another note in the
 same tab stops reading.
 
 ## Settings
@@ -212,10 +218,11 @@ same tab stops reading.
 
 **Reading**
 
-- **Maximum characters at a time** – longer paragraphs are cut between
-  sentences.
-- **Pause between paragraphs** – in seconds.
-- **Scroll along** – keeps the paragraph being read on screen.
+- **Longest piece spoken at once** – a sentence longer than this many
+  characters is cut at commas.
+- **Pause between paragraphs** – in seconds; sentences within a paragraph
+  follow each other with Piper's own short pause.
+- **Scroll along** – keeps the sentence being read on screen.
 
 **Advanced** – both can be left empty:
 

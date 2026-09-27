@@ -1,4 +1,4 @@
-/* The piece being read: a soft wash of the accent color, just enough to find
+/* The sentence being read: a soft wash of the accent color, just enough to find
    your place again when you look back at the screen. */
 .readaloud-current {
   background-color: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
@@ -8,16 +8,12 @@
   box-decoration-break: clone;
 }
 
-/* Reading view: the rendered block holding the piece. */
-.readaloud-current-block {
-  background-color: color-mix(in srgb, var(--interactive-accent) 11%, transparent);
-  box-shadow: -10px 0 0 color-mix(in srgb, var(--interactive-accent) 11%, transparent),
-              10px 0 0 color-mix(in srgb, var(--interactive-accent) 11%, transparent);
-  border-radius: 6px;
-  transition: background-color 250ms ease;
+/* Reading view: the same, as a highlight over the rendered text. */
+::highlight(readaloud-current) {
+  background-color: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
 }
 
-/* Status bar controls: label, pause/resume and stop. */
+/* Status bar controls: label, previous sentence, pause/resume, next sentence, stop. */
 .readaloud-status {
   display: flex;
   align-items: center;

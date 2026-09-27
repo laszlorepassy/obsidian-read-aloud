@@ -104,8 +104,11 @@ var require_segmenter = __commonJS({
       close();
       return result;
     }
+    var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "\u2013", mdash: "\u2014", hellip: "\u2026" };
     function speakable(source) {
       let s = source;
+      s = s.replace(/^\[\^[^\]]*\]:\s*/, "");
+      s = s.replace(/\s+#+\s*$/, "");
       s = s.replace(/%%[\s\S]*?%%/g, " ");
       s = s.replace(/<!--[\s\S]*?-->/g, " ");
       s = s.replace(/!\[\[[^\]]*\]\]/g, " ");
@@ -129,6 +132,16 @@ var require_segmenter = __commonJS({
       s = s.replace(/(^|[^\w*])\*(?=\S)|(\S)\*(?=[^\w*]|$)/g, "$1$2");
       s = s.replace(/(^|[^\p{L}\p{N}_])_(?=\S)|(\S)_(?=[^\p{L}\p{N}_]|$)/gu, "$1$2");
       s = s.replace(/(^|\s)#([\p{L}\p{N}_/-]+)/gu, "$1$2");
+      s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+        if (e[0] !== "#") return ENTITIES[e.toLowerCase()] || m;
+        const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        try {
+          return String.fromCodePoint(code);
+        } catch (err) {
+          return " ";
+        }
+      });
+      s = s.replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, " ");
       if (/^\s*\|/.test(s)) {
         s = s.split("|").map((c) => c.trim()).filter(Boolean).join(", ");
       }
@@ -198,20 +211,64 @@ var require_segmenter = __commonJS({
     }
     function segment2(source, { maxLength = 300 } = {}) {
       const result = [];
-      for (const block of blocks(source)) {
-        const body = source.slice(block.from, block.to);
-        for (const [a, b] of cut(body, maxLength)) {
-          const piece = body.slice(a, b);
-          const lead = piece.length - piece.trimStart().length;
-          const trail = piece.length - piece.trimEnd().length;
-          const text = speakable(piece);
-          if (!text) continue;
-          result.push({ from: block.from + a + lead, to: block.from + b - trail, text });
+      for (const b of blocks(source)) {
+        const body = source.slice(b.from, b.to);
+        const block = { from: b.from, to: b.from + body.trimEnd().length };
+        const bounds = [0, ...sentenceStarts(body), body.length];
+        for (let i = 1; i < bounds.length; i++) {
+          const start = bounds[i - 1];
+          for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength)) {
+            const piece = body.slice(start + x, start + y);
+            const text = speakable(piece);
+            if (!text) continue;
+            const lead = piece.length - piece.trimStart().length;
+            const trail = piece.length - piece.trimEnd().length;
+            result.push({ from: b.from + start + x + lead, to: b.from + start + y - trail, text, block });
+          }
         }
       }
       return result;
     }
     module2.exports = { segment: segment2, speakable, blocks, cut, sentenceStarts };
+  }
+});
+
+// src/text-match.js
+var require_text_match = __commonJS({
+  "src/text-match.js"(exports2, module2) {
+    "use strict";
+    function matchText2(pieces, text, hint = 0) {
+      const isKey = (ch) => /[\p{L}\p{N}]/u.test(ch);
+      let hay = "";
+      const where = [];
+      pieces.forEach((piece2, p) => {
+        for (let i = 0; i < piece2.length; i++) {
+          if (isKey(piece2[i])) {
+            hay += piece2[i].toLowerCase();
+            where.push([p, i]);
+          }
+        }
+      });
+      let needle = "";
+      for (const ch of text) if (isKey(ch)) needle += ch.toLowerCase();
+      if (!needle) return null;
+      let best = -1;
+      for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + 1)) {
+        if (best === -1 || Math.abs(at - hint) < Math.abs(best - hint)) best = at;
+      }
+      if (best === -1) return null;
+      const [endPiece, endOffset] = where[best + needle.length - 1];
+      let end = endOffset + 1;
+      const piece = pieces[endPiece];
+      while (end < piece.length && /[.!?…,;:"'”’»)\]]/.test(piece[end])) end++;
+      return { start: where[best], end: [endPiece, end] };
+    }
+    function keyLength2(text) {
+      let n = 0;
+      for (const ch of text) if (/[\p{L}\p{N}]/u.test(ch)) n++;
+      return n;
+    }
+    module2.exports = { matchText: matchText2, keyLength: keyLength2 };
   }
 });
 
@@ -442,7 +499,7 @@ def main():
             except Exception as e:
                 loaded = None
                 send({"error": "Could not load the voice %s: %s"
-                      % (wanted[0], e)})
+                      % (wanted[0], e), "voiceFailed": True})
         elif cmd == "speak":
             speak(engine, req, loaded)
 
@@ -489,7 +546,7 @@ var require_piper_client = __commonJS({
     var path2 = require("path");
     var SERVER_SOURCE = require_piper_server();
     var PiperClient2 = class {
-      constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10 }) {
+      constructor({ scriptDir, onAudio, onError, isBusy, idleMinutes = 10, startSeconds = 90 }) {
         this.scriptDir = scriptDir;
         this.info = null;
         this.catalogWaiters = [];
@@ -498,6 +555,7 @@ var require_piper_client = __commonJS({
         this.onError = onError;
         this.isBusy = isBusy || (() => false);
         this.idleMs = idleMinutes * 60 * 1e3;
+        this.startMs = startSeconds * 1e3;
         this.proc = null;
         this.ready = null;
         this.voiceKey = null;
@@ -543,15 +601,25 @@ var require_piper_client = __commonJS({
           let header = null;
           let stderr = "";
           let started = false;
+          proc.stdin.on("error", () => {
+          });
+          const timeout = setTimeout(() => {
+            if (started) return;
+            reject(new Error(`Piper did not start in ${this.startMs / 1e3} seconds.
+${stderr.trim()}`));
+            this.stop();
+          }, this.startMs);
           proc.stdout.on("data", (data) => {
             buffer = buffer.length ? Buffer.concat([buffer, data]) : data;
             for (; ; ) {
               if (!header) {
                 const nl = buffer.indexOf(10);
                 if (nl === -1) return;
-                const line = buffer.subarray(0, nl).toString("utf8");
+                let line = buffer.subarray(0, nl).toString("utf8");
                 buffer = buffer.subarray(nl + 1);
-                if (!line.startsWith("{")) continue;
+                const brace = line.indexOf('{"');
+                if (brace === -1) continue;
+                line = line.slice(brace);
                 try {
                   header = JSON.parse(line);
                 } catch (e) {
@@ -565,10 +633,12 @@ var require_piper_client = __commonJS({
               header = null;
               if (h.ready) {
                 started = true;
+                clearTimeout(timeout);
                 this.info = h;
                 resolve(h);
                 continue;
               }
+              if (h.voiceFailed) this.voiceKey = null;
               if (h.fatal) {
                 reject(new Error(h.error));
                 continue;
@@ -593,20 +663,20 @@ var require_piper_client = __commonJS({
             stderr = (stderr + d.toString()).slice(-4e3);
           });
           proc.on("error", (err) => {
+            clearTimeout(timeout);
             if (!started) reject(err);
-            this.forget(proc);
+            this.forget(proc, err);
           });
-          proc.on("exit", (code) => {
-            this.forget(proc);
-            const gone = new Error(`Piper stopped (exit code ${code}).
+          proc.on("exit", (code, signal) => {
+            clearTimeout(timeout);
+            const how = signal ? `signal ${signal}` : `exit code ${code}`;
+            const gone = new Error(`Piper stopped (${how}).
 ${stderr.trim()}`);
-            for (const w of this.catalogWaiters.splice(0)) w.reject(gone);
-            for (const d of this.downloads.values()) d.reject(gone);
-            this.downloads.clear();
+            this.forget(proc, gone);
             if (!started) {
-              reject(new Error(`Piper did not start (exit code ${code}).
+              reject(new Error(`Piper did not start (${how}).
 ${stderr.trim()}`));
-            } else if (code && code !== 0 && !proc.killedByUs) {
+            } else if (!proc.killedByUs) {
               this.onError(gone);
             }
           });
@@ -616,16 +686,28 @@ ${stderr.trim()}`));
         });
         return this.ready;
       }
-      forget(proc) {
+      /**
+       * Lets go of a server that stopped or is being stopped, failing what was
+       * still waiting for its answer. A server started since is left alone.
+       */
+      forget(proc, why) {
         if (this.proc !== proc) return;
         this.proc = null;
         this.ready = null;
         this.voiceKey = null;
         this.info = null;
+        const err = why || new Error("Piper was stopped.");
+        for (const w of this.catalogWaiters.splice(0)) w.reject(err);
+        for (const d of this.downloads.values()) d.reject(err);
+        this.downloads.clear();
       }
       /** The voices calibre knows, with `installed` set for those in `dir`. */
       catalog(dir) {
         return new Promise((resolve, reject) => {
+          if (!this.proc) {
+            reject(new Error("Piper is not running."));
+            return;
+          }
           this.catalogWaiters.push({ resolve, reject });
           this.send({ cmd: "catalog", dir: dir || void 0 });
         });
@@ -636,6 +718,7 @@ ${stderr.trim()}`));
       }
       /** Downloads a voice from calibre's list into `dir`. */
       download(key, dir, onProgress) {
+        if (!this.proc) return Promise.reject(new Error("Piper is not running."));
         if (this.downloads.has(key)) return this.downloads.get(key).promise;
         const entry = { onProgress };
         entry.promise = new Promise((resolve, reject) => {
@@ -716,6 +799,7 @@ var require_calibre = __commonJS({
     var fs = require("fs");
     var os2 = require("os");
     var path2 = require("path");
+    var { spawnSync } = require("child_process");
     var FLATPAK_ID = "com.calibre_ebook.calibre";
     function candidates({ platform = process.platform, env = process.env, home = os2.homedir() } = {}) {
       const direct = (file) => ({ file, command: file, args: [], label: file });
@@ -751,8 +835,16 @@ var require_calibre = __commonJS({
       const seen = /* @__PURE__ */ new Set();
       return list.filter((c) => !seen.has(c.file) && seen.add(c.file));
     }
+    function defaultExists(file) {
+      if (!process.env.FLATPAK_ID) return fs.existsSync(file);
+      try {
+        return spawnSync("flatpak-spawn", ["--host", "test", "-e", file], { timeout: 5e3 }).status === 0;
+      } catch (e) {
+        return false;
+      }
+    }
     function findCalibre2(configured, opts = {}) {
-      const exists = opts.exists || fs.existsSync;
+      const exists = opts.exists || defaultExists;
       if (configured) {
         return { file: configured, command: configured, args: [], label: configured };
       }
@@ -767,14 +859,18 @@ var require_voices = __commonJS({
   "src/voices.js"(exports2, module2) {
     "use strict";
     var QUALITY_ORDER = ["medium", "high", "low", "x_low", ""];
+    var languageNames = /* @__PURE__ */ new Map();
     function languageName(lang) {
       if (!lang) return "Other";
-      try {
-        const names = new Intl.DisplayNames(["en"], { type: "language" });
-        return names.of(lang.replace("_", "-")) || lang;
-      } catch (e) {
-        return lang;
+      if (!languageNames.has(lang)) {
+        let name = lang;
+        try {
+          name = new Intl.DisplayNames(["en"], { type: "language" }).of(lang.replace("_", "-")) || lang;
+        } catch (e) {
+        }
+        languageNames.set(lang, name);
       }
+      return languageNames.get(lang);
     }
     function capitalize(s) {
       return s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -867,20 +963,27 @@ var require_highlight = __commonJS({
     var { Decoration, EditorView } = require("@codemirror/view");
     var setReading = StateEffect.define();
     var mark = Decoration.mark({ class: "readaloud-current" });
+    function decorations(range) {
+      return range && range.from < range.to ? Decoration.set([mark.range(range.from, range.to)]) : Decoration.none;
+    }
+    function mapRange(changes, r) {
+      const from = changes.mapPos(r.from, 1);
+      return { from, to: Math.max(from, changes.mapPos(r.to, -1)) };
+    }
     var readingField2 = StateField.define({
       create: () => ({ range: null, deco: Decoration.none }),
       update(value, tr) {
         for (const e of tr.effects) {
           if (e.is(setReading)) {
             const r = e.value;
-            if (!r || r.from >= r.to) return { range: null, deco: Decoration.none };
-            return { range: { from: r.from, to: r.to }, deco: Decoration.set([mark.range(r.from, r.to)]) };
+            if (!r) return { range: null, deco: Decoration.none };
+            const range2 = { from: r.from, to: r.to, block: { from: r.block.from, to: r.block.to } };
+            return { range: range2, deco: decorations(range2) };
           }
         }
         if (!value.range || !tr.docChanged) return value;
-        const from = tr.changes.mapPos(value.range.from, 1);
-        const to = Math.max(from, tr.changes.mapPos(value.range.to, -1));
-        return { range: { from, to }, deco: from < to ? Decoration.set([mark.range(from, to)]) : Decoration.none };
+        const range = { ...mapRange(tr.changes, value.range), block: mapRange(tr.changes, value.range.block) };
+        return { range, deco: decorations(range) };
       },
       provide: (f) => EditorView.decorations.from(f, (v) => v.deco)
     });
@@ -905,7 +1008,7 @@ var require_highlight = __commonJS({
 // HELP.md
 var require_HELP = __commonJS({
   "HELP.md"(exports2, module2) {
-    module2.exports = '# Read Aloud \u2013 user guide\n\nRead Aloud reads the open note aloud, one paragraph at a time, and softly\nhighlights where it is. The voice is **Piper**, a neural text-to-speech\nengine that runs on your own computer: no internet connection is needed\nwhile reading, and your notes never leave your computer.\n\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\ntablets). Setting it up takes three steps:\n\n1. Install calibre, which brings Piper with it.\n2. Install the plugin in your vault.\n3. Download a voice in the plugin\'s settings.\n\n## Why calibre?\n\nPiper exists for Windows, macOS and Linux as a program of its own too, but\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\n(calibre-ebook.com). calibre has a one-click installer on every system,\nkeeps Piper up to date, and knows where to download voices from, in 58\nlanguages. You don\'t have to use calibre itself for anything; it only has\nto be installed. If you already listen to books with calibre\'s e-book\nviewer, Read Aloud uses the same voices.\n\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\nbest.\n\n## 1. Install calibre\n\n### Windows\n\n1. Go to calibre-ebook.com/download_windows and download the installer\n   (*calibre 64bit*).\n2. Run it and click through with the default settings. calibre goes to\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\n\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\n\n### macOS\n\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\n2. Open it and drag **calibre** into **Applications**.\n3. Start calibre once from Applications, so macOS lets it run. After that\n   you can close it.\n\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\nhome folder).\n\n### Linux\n\nMost distributions\' own calibre packages are **too old** (Debian 13 and\nUbuntu 24.04, for example, have calibre versions without the built-in\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\nmore, you are done. Otherwise use one of these:\n\n**Official installer (recommended).** In a terminal:\n\n```bash\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\n```\n\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\nIf it complains about missing libraries, install them first; on\nDebian/Ubuntu:\n\n```bash\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\n```\n\nWithout admin rights, calibre can go into your home folder instead:\n\n```bash\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\n```\n\n**Flatpak** (from Flathub):\n\n```bash\nflatpak install flathub com.calibre_ebook.calibre\n```\n\nRead Aloud finds calibre in any of these places by itself.\n\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\nprograms outside it unless you allow it. Allow it once with:\n\n```bash\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\n```\n\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\nnone of this.)\n\n## 2. Install the plugin\n\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\nby hand:\n\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\n   (create `plugins` if it is not there). Hidden folders are shown with\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\n   on Windows, `.obsidian` is visible as it is.\n2. In it, create a folder named `read-aloud`.\n3. Put these three files from the plugin\'s GitHub page\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\n   `main.js`, `manifest.json` and `styles.css`.\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\n   off, turn them on ("Turn on community plugins"). Click the refresh\n   button next to *Installed plugins*, then turn on **Read Aloud**.\n\nTo update the plugin later, replace the three files, then turn Read Aloud\noff and on again (or restart Obsidian).\n\n## 3. Download a voice\n\nOpen **Settings \u2192 Read Aloud**.\n\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\n   was found. If it shows \u2717, see Troubleshooting.\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\n   language of your system first.\n3. Choose a **voice to download** and click **Download**. Voices are\n   20\u2013120 MB; the progress is shown under the voice.\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\n     a bit better but is slower; *low* and *x low* are the smallest.\n   - A \u2713 after a name means that voice is already installed.\n4. The voice just downloaded becomes the one that reads. Click the \u25B6\n   button next to **Voice** to hear it.\n\nYou can download as many voices as you like and switch between them under\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\ne-book viewer can use them too, and they need downloading only once per\ncomputer.\n\n## Reading\n\n### Starting\n\n- **Speaker icon** in the left ribbon: starts at the cursor.\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\n  paragraph you clicked.\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\n  - *Read Aloud: Read from cursor*\n  - *Read Aloud: Read note from the start*\n\nIn reading view, reading starts at the paragraph at the top of the screen.\n\nThe first start takes a few seconds while calibre starts and the voice\nloads; meanwhile the status bar shows "Starting\u2026". After that, each\nparagraph is read almost immediately, and the next one is prepared while\nthe current one is read, so there are no waits between them.\n\n### Controls while reading\n\nWhile reading, the controls appear in the status bar at the bottom right:\n\n| Button | What it does |\n|---|---|\n| \u23F8 / \u25B6 | Pause / resume |\n| \u23F9 | Stop |\n\nThe speaker icon in the ribbon also pauses and resumes.\n\nThese are commands too, and you can give them hotkeys under\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\n\n- *Pause / resume*\n- *Stop reading*\n- *Next paragraph* \u2013 skips the current one\n- *Previous paragraph* \u2013 goes back one\n\nTip: Ctrl+Alt+Space for pause/resume and Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next\nand previous paragraph work well.\n\n### What is read, and what is not\n\nParagraphs, headings, list items, quotes and table rows are read, each as a\nseparate piece. Long paragraphs are cut into smaller pieces between\nsentences (300 characters at most by default), so reading never slows down.\n\nLeft out:\n\n- the properties at the top of the note (front matter),\n- code blocks, math and `%% comments %%`,\n- embedded images and notes,\n- link addresses (the link text is read),\n- Markdown syntax (`**`, `#`, `-` and so on).\n\n### Editing while reading\n\nYou can keep typing in the note while it is read: the highlight and the\nreading position move along with your edits. Opening another note in the\nsame tab stops reading.\n\n## Settings\n\n**Speech engine**\n\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\n  *Check again* looks again, e.g. after installing or updating calibre.\n\n**Voice**\n\n- **Voice** \u2013 the installed voice that reads; \u25B6 plays a sample sentence.\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\n  the voice, which causes a short pause.\n\n**Download voices** \u2013 see step 3.\n\n**Reading**\n\n- **Maximum characters at a time** \u2013 longer paragraphs are cut between\n  sentences.\n- **Pause between paragraphs** \u2013 in seconds.\n- **Scroll along** \u2013 keeps the paragraph being read on screen.\n\n**Advanced** \u2013 both can be left empty:\n\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\n  portable version on Windows.\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\n  folder, which is shown greyed out in the field. Piper voices from\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\n  copied into this folder too; they then appear under **Voice**.\n\n## Troubleshooting\n\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\nplace. Install it as in step 1, then click *Check\nagain* in the settings. For portable or unusual installs, enter the path of\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\n\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\ncause: use the official installer or Flatpak instead (see\nLinux).\n\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\n\n**The download fails** \u2013 it needs an internet connection to\nhuggingface.co. A firewall or proxy may block it. You can also download a\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\nand the `.onnx.json` file) and copy them into the voices folder.\n\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\nthe note at the end of Linux.\n\n**No sound** \u2013 check that the system volume is not muted and that the right\noutput device is selected; try the \u25B6 button next to *Voice*.\n\n**The first paragraph takes long** \u2013 only the very first start after\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\nmemory it used) needs a few seconds to load the voice.\n';
+    module2.exports = '# Read Aloud \u2013 user guide\n\nRead Aloud reads the open note aloud, sentence by sentence, and softly\nhighlights the sentence being read. The voice is **Piper**, a neural text-to-speech\nengine that runs on your own computer: no internet connection is needed\nwhile reading, and your notes never leave your computer.\n\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\ntablets). Setting it up takes three steps:\n\n1. Install calibre, which brings Piper with it.\n2. Install the plugin in your vault.\n3. Download a voice in the plugin\'s settings.\n\n## Why calibre?\n\nPiper exists for Windows, macOS and Linux as a program of its own too, but\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\n(calibre-ebook.com). calibre has a one-click installer on every system,\nkeeps Piper up to date, and knows where to download voices from, in 58\nlanguages. You don\'t have to use calibre itself for anything; it only has\nto be installed. If you already listen to books with calibre\'s e-book\nviewer, Read Aloud uses the same voices.\n\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\nbest.\n\n## 1. Install calibre\n\n### Windows\n\n1. Go to calibre-ebook.com/download_windows and download the installer\n   (*calibre 64bit*).\n2. Run it and click through with the default settings. calibre goes to\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\n\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\n\n### macOS\n\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\n2. Open it and drag **calibre** into **Applications**.\n3. Start calibre once from Applications, so macOS lets it run. After that\n   you can close it.\n\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\nhome folder).\n\n### Linux\n\nMost distributions\' own calibre packages are **too old** (Debian 13 and\nUbuntu 24.04, for example, have calibre versions without the built-in\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\nmore, you are done. Otherwise use one of these:\n\n**Official installer (recommended).** In a terminal:\n\n```bash\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\n```\n\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\nIf it complains about missing libraries, install them first; on\nDebian/Ubuntu:\n\n```bash\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\n```\n\nWithout admin rights, calibre can go into your home folder instead:\n\n```bash\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\n```\n\n**Flatpak** (from Flathub):\n\n```bash\nflatpak install flathub com.calibre_ebook.calibre\n```\n\nRead Aloud finds calibre in any of these places by itself.\n\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\nprograms outside it unless you allow it. Allow it once with:\n\n```bash\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\n```\n\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\nnone of this.)\n\n## 2. Install the plugin\n\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\nby hand:\n\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\n   (create `plugins` if it is not there). Hidden folders are shown with\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\n   on Windows, `.obsidian` is visible as it is.\n2. In it, create a folder named `read-aloud`.\n3. Put these three files from the plugin\'s GitHub page\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\n   `main.js`, `manifest.json` and `styles.css`.\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\n   off, turn them on ("Turn on community plugins"). Click the refresh\n   button next to *Installed plugins*, then turn on **Read Aloud**.\n\nTo update the plugin later, replace the three files, then turn Read Aloud\noff and on again (or restart Obsidian).\n\n## 3. Download a voice\n\nOpen **Settings \u2192 Read Aloud**.\n\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\n   was found. If it shows \u2717, see Troubleshooting.\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\n   language of your system first.\n3. Choose a **voice to download** and click **Download**. Voices are\n   20\u2013120 MB; the progress is shown under the voice.\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\n     a bit better but is slower; *low* and *x low* are the smallest.\n   - A \u2713 after a name means that voice is already installed.\n4. The voice just downloaded becomes the one that reads. Click the \u25B6\n   button next to **Voice** to hear it.\n\nYou can download as many voices as you like and switch between them under\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\ne-book viewer can use them too, and they need downloading only once per\ncomputer.\n\n## Reading\n\n### Starting\n\n- **Speaker icon** in the left ribbon: starts at the cursor.\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\n  sentence you clicked.\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\n  - *Read Aloud: Read from cursor*\n  - *Read Aloud: Read note from the start*\n\nIn reading view, reading starts at the top of the screen.\n\nThe first start takes a few seconds while calibre starts and the voice\nloads; meanwhile the status bar shows "Starting\u2026". After that, reading\nstarts almost immediately, and the next sentence is prepared while the\ncurrent one is read, so there are no waits between them.\n\n### Controls while reading\n\nWhile reading, the controls appear in the status bar at the bottom right:\n\n| Button | What it does |\n|---|---|\n| \u2039 | Back one sentence (or, more than two seconds into a sentence, to its start) |\n| \u23F8 / \u25B6 | Pause / resume |\n| \u203A | Forward one sentence |\n| \u23F9 | Stop |\n\nThe speaker icon in the ribbon also pauses and resumes.\n\nThese are commands too, and you can give them hotkeys under\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\n\n- *Pause / resume*\n- *Stop reading*\n- *Next sentence* / *Previous sentence*\n- *Next paragraph* / *Previous paragraph* \u2013 skips to the start of the next\n  paragraph, or back to the start of the previous one\n\nTip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next and\nprevious sentence, and Ctrl+Alt+\u2193 / Ctrl+Alt+\u2191 for next and previous\nparagraph work well.\n\n### What is read, and what is not\n\nParagraphs, headings, list items, quotes and table rows are read, sentence\nby sentence. An unusually long sentence is cut at commas (at 300\ncharacters by default), so reading never slows down.\n\nLeft out:\n\n- the properties at the top of the note (front matter),\n- code blocks, math and `%% comments %%`,\n- embedded images and notes,\n- link addresses (the link text is read),\n- Markdown syntax (`**`, `#`, `-` and so on).\n\n### Editing while reading\n\nYou can keep typing in the note while it is read: the highlight and the\nreading position move along with your edits.\n\nIn reading view, the sentence is highlighted in the rendered text too. Opening another note in the\nsame tab stops reading.\n\n## Settings\n\n**Speech engine**\n\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\n  *Check again* looks again, e.g. after installing or updating calibre.\n\n**Voice**\n\n- **Voice** \u2013 the installed voice that reads; \u25B6 plays a sample sentence.\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\n  the voice, which causes a short pause.\n\n**Download voices** \u2013 see step 3.\n\n**Reading**\n\n- **Longest piece spoken at once** \u2013 a sentence longer than this many\n  characters is cut at commas.\n- **Pause between paragraphs** \u2013 in seconds; sentences within a paragraph\n  follow each other with Piper\'s own short pause.\n- **Scroll along** \u2013 keeps the sentence being read on screen.\n\n**Advanced** \u2013 both can be left empty:\n\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\n  portable version on Windows.\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\n  folder, which is shown greyed out in the field. Piper voices from\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\n  copied into this folder too; they then appear under **Voice**.\n\n## Troubleshooting\n\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\nplace. Install it as in step 1, then click *Check\nagain* in the settings. For portable or unusual installs, enter the path of\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\n\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\ncause: use the official installer or Flatpak instead (see\nLinux).\n\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\n\n**The download fails** \u2013 it needs an internet connection to\nhuggingface.co. A firewall or proxy may block it. You can also download a\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\nand the `.onnx.json` file) and copy them into the voices folder.\n\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\nthe note at the end of Linux.\n\n**No sound** \u2013 check that the system volume is not muted and that the right\noutput device is selected; try the \u25B6 button next to *Voice*.\n\n**The first paragraph takes long** \u2013 only the very first start after\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\nmemory it used) needs a few seconds to load the voice.\n';
   }
 });
 
@@ -919,12 +1022,14 @@ var {
   FileSystemAdapter,
   Modal,
   MarkdownRenderer,
+  Component,
   setIcon,
   setTooltip
 } = require("obsidian");
 var os = require("os");
 var path = require("path");
-var { segment } = require_segmenter();
+var { segment, speakable: segmentText } = require_segmenter();
+var { matchText, keyLength } = require_text_match();
 var { PiperClient } = require_piper_client();
 var { findCalibre } = require_calibre();
 var voices = require_voices();
@@ -1004,24 +1109,19 @@ var ReadAloudPlugin = class extends Plugin {
         return true;
       }
     });
-    this.addCommand({
-      id: "next",
-      name: "Next paragraph",
+    const skipCommand = (id, name, direction, by) => this.addCommand({
+      id,
+      name,
       checkCallback: (checking) => {
         if (!this.session) return false;
-        if (!checking) this.skip(1);
+        if (!checking) this.skip(direction, by);
         return true;
       }
     });
-    this.addCommand({
-      id: "previous",
-      name: "Previous paragraph",
-      checkCallback: (checking) => {
-        if (!this.session) return false;
-        if (!checking) this.skip(-1);
-        return true;
-      }
-    });
+    skipCommand("next-sentence", "Next sentence", 1, "sentence");
+    skipCommand("previous-sentence", "Previous sentence", -1, "sentence");
+    skipCommand("next", "Next paragraph", 1, "paragraph");
+    skipCommand("previous", "Previous paragraph", -1, "paragraph");
     this.addCommand({
       id: "help",
       name: "Help",
@@ -1115,9 +1215,9 @@ var ReadAloudPlugin = class extends Plugin {
     if (where === "cursor") {
       offset = view.getMode() === "preview" ? this.previewTopOffset(view, cm) : cm.state.selection.main.head;
     }
-    const pieces = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
-    let seg = pieces.find((p) => p.to > offset);
-    if (!seg && where === "cursor") seg = pieces[0];
+    const sentences = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    let seg = sentences.find((p) => p.to > offset);
+    if (!seg && where === "cursor") seg = sentences[0];
     if (!seg) {
       new Notice("There is nothing to read in this note.");
       return;
@@ -1168,7 +1268,7 @@ var ReadAloudPlugin = class extends Plugin {
     this.piper.speak(track.id, seg.text);
     return track;
   }
-  /** Starts reading `seg`, using the synthesized audio if it was prepared. */
+  /** Starts reading the sentence `seg`, using its audio if it was prepared. */
   play(seg) {
     const session = this.session;
     let track = session.next;
@@ -1182,16 +1282,19 @@ var ReadAloudPlugin = class extends Plugin {
     session.current = track;
     this.highlight(seg);
     this.updateStatus();
-    const following = this.pieceAfter(seg.to);
+    const following = this.sentenceAfter(seg.to);
     if (following) session.next = this.request(following);
     for (const chunk of track.queued) this.schedule(track, chunk);
     track.queued = [];
     this.checkFinished(track);
   }
-  /** The first piece starting at or after `offset` in the note as it is now. */
-  pieceAfter(offset) {
-    const pieces = segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
-    return pieces.find((p) => p.from >= offset) || null;
+  /** The sentences of the note as it is now. */
+  sentences() {
+    return segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+  }
+  /** The first sentence starting at or after `offset` in the note as it is now. */
+  sentenceAfter(offset) {
+    return this.sentences().find((p) => p.from >= offset) || null;
   }
   onAudio(id, samples, rate, last) {
     if (this.test && this.test.id === id) {
@@ -1226,6 +1329,7 @@ var ReadAloudPlugin = class extends Plugin {
     const at = Math.max(ctx.currentTime + 0.03, this.playhead);
     source.start(at);
     this.playhead = at + buffer.duration;
+    if (track.startAt === void 0) track.startAt = at;
     track.pending++;
     track.sources = track.sources || [];
     track.sources.push(source);
@@ -1261,26 +1365,41 @@ var ReadAloudPlugin = class extends Plugin {
       return;
     }
     const range = readingRange(session.cm) || session.current.seg;
-    const seg = this.pieceAfter(range.to);
+    const seg = this.sentenceAfter(range.to);
     if (!seg) {
       this.stop();
       return;
     }
-    this.playhead = this.audio.currentTime + this.settings.paragraphPause / this.settings.speed;
+    const newBlock = seg.block.from >= range.block.to;
+    this.playhead = this.audio.currentTime + (newBlock ? this.settings.paragraphPause / this.settings.speed : 0);
     this.play(seg);
   }
-  /** Jumps to the next (+1) or previous (-1) piece. */
-  skip(direction) {
+  /**
+   * Jumps to the next (+1) or previous (-1) sentence or paragraph. Going back
+   * a sentence more than a couple of seconds into one starts it again, like
+   * the back button of a player; pressed right after, it goes one further.
+   */
+  skip(direction, by = "sentence") {
     const session = this.session;
     if (!session || !session.current) return;
     const range = readingRange(session.cm) || session.current.seg;
-    const pieces = segment(session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    const sentences = this.sentences();
     let target;
-    if (direction > 0) {
-      target = pieces.find((p) => p.from >= range.to);
+    if (by === "paragraph") {
+      if (direction > 0) {
+        target = sentences.find((p) => p.block.from >= range.block.to);
+      } else {
+        const before = sentences.filter((p) => p.block.to <= range.block.from);
+        const block = before.length ? before[before.length - 1].block : range.block;
+        target = sentences.find((p) => p.block.from === block.from);
+      }
+    } else if (direction > 0) {
+      target = sentences.find((p) => p.from >= range.to);
     } else {
-      const before = pieces.filter((p) => p.to <= range.from);
-      target = before[before.length - 1] || pieces.find((p) => p.to > range.from);
+      const track = session.current;
+      const heard = track.startAt === void 0 ? 0 : this.audio.currentTime - track.startAt;
+      const before = sentences.filter((p) => p.to <= range.from);
+      target = heard > 2 || !before.length ? sentences.find((p) => p.to > range.from) : before[before.length - 1];
     }
     if (!target) return;
     this.silence();
@@ -1355,57 +1474,76 @@ var ReadAloudPlugin = class extends Plugin {
   // ------------------------------------------------------------ showing it
   highlight(seg) {
     const session = this.session;
-    showReading(session.cm, { from: seg.from, to: seg.to }, this.settings.follow);
+    showReading(session.cm, { from: seg.from, to: seg.to, block: seg.block }, this.settings.follow);
     this.highlightPreview(seg, this.settings.follow);
   }
   /**
-   * In reading view, the editor's highlight is not visible, so the rendered
-   * block holding the piece gets a soft background instead.
+   * In reading view, the editor's highlight is not visible, so the sentence
+   * is found in the rendered text and marked with a CSS custom highlight,
+   * which leaves the rendered page itself untouched.
    */
   highlightPreview(seg, scroll) {
     this.clearPreviewHighlight();
     const session = this.session;
-    if (!session || session.view.getMode() !== "preview") return;
+    if (!session || session.view.getMode() !== "preview" || !window.CSS || !CSS.highlights) return;
     try {
       const doc = session.cm.state.doc;
       const range = readingRange(session.cm) || seg;
-      const line = doc.lineAt(range.from).number - 1;
+      const first = doc.lineAt(range.block.from).number - 1;
+      const last = doc.lineAt(range.to).number - 1;
       const preview = session.view.previewMode;
-      const section = preview.renderer.sections.find((s) => s.lineStart <= line && line <= s.lineEnd);
-      if (!section || !section.el) return;
-      section.el.addClass("readaloud-current-block");
-      this.previewEl = section.el;
-      if (!scroll) return;
-      if (section.el.isConnected) section.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      else preview.applyScroll(line);
+      const sections = preview.renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
+      if (!sections.length) return;
+      if (scroll && !sections[0].el.isConnected) preview.applyScroll(first);
+      const nodes = [];
+      for (const s of sections) {
+        const walker = document.createTreeWalker(s.el, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+      }
+      const hint = keyLength(segmentText(doc.sliceString(sections[0].lineStart === first ? range.block.from : doc.line(sections[0].lineStart + 1).from, range.from)));
+      const found = matchText(nodes.map((n) => n.nodeValue), seg.text, hint);
+      if (!found) return;
+      const marked = document.createRange();
+      marked.setStart(nodes[found.start[0]], found.start[1]);
+      marked.setEnd(nodes[found.end[0]], found.end[1]);
+      CSS.highlights.set("readaloud-current", new Highlight(marked));
+      if (scroll) {
+        const el = marked.startContainer.parentElement;
+        if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     } catch (e) {
     }
   }
   clearPreviewHighlight() {
-    if (this.previewEl) this.previewEl.removeClass("readaloud-current-block");
-    this.previewEl = null;
+    try {
+      CSS.highlights.delete("readaloud-current");
+    } catch (e) {
+    }
   }
   /**
-   * The controls in the status bar: a label and pause/stop buttons. They are
-   * built once and only updated, each button with its own tooltip, so a
-   * tooltip always points at the button under the mouse.
+   * The controls in the status bar: a label, then previous sentence, pause,
+   * next sentence and stop buttons. They are built once and only updated,
+   * each button with its own tooltip, so a tooltip always points at the
+   * button under the mouse.
    */
   buildStatus() {
     this.status = this.addStatusBarItem();
     this.status.addClass("readaloud-status");
     this.statusLabel = this.status.createSpan({ cls: "readaloud-status-label" });
-    const button = (onClick) => {
+    const button = (icon, tooltip, onClick) => {
       const el = this.status.createDiv({ cls: "readaloud-status-button clickable-icon" });
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         onClick();
       });
+      if (icon) setIcon(el, icon);
+      if (tooltip) setTooltip(el, tooltip, { placement: "top" });
       return el;
     };
-    this.pauseButton = button(() => this.togglePause());
-    this.stopButton = button(() => this.stop());
-    setIcon(this.stopButton, "square");
-    setTooltip(this.stopButton, "Stop", { placement: "top" });
+    button("chevron-left", "Previous sentence", () => this.skip(-1, "sentence"));
+    this.pauseButton = button(null, null, () => this.togglePause());
+    button("chevron-right", "Next sentence", () => this.skip(1, "sentence"));
+    button("square", "Stop", () => this.stop());
   }
   updateStatus() {
     const s = this.session;
@@ -1451,17 +1589,24 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
     this.downloadKey = null;
     this.downloading = null;
   }
-  /** Asks the speech server about calibre and the voices, then redraws. */
-  async check() {
-    this.engine = { status: "checking" };
-    this.display();
+  /**
+   * Asks the speech server about calibre and the voices, then redraws. What
+   * was known stays on screen meanwhile, unless `fresh`.
+   */
+  async check(fresh) {
+    if (fresh || !this.engine || this.engine.status !== "ok") {
+      this.engine = { status: "checking" };
+      this.render();
+    }
+    let engine;
     try {
       const { voices: list, dir } = await this.plugin.catalog();
-      this.engine = { status: "ok", info: this.plugin.piper.info, voices: list, dir };
+      engine = { status: "ok", info: this.plugin.piper.info, voices: list, dir };
     } catch (err) {
-      this.engine = { status: "error", error: err.message };
+      engine = { status: "error", error: err.message };
     }
-    this.display();
+    this.engine = engine;
+    this.render();
   }
   hide() {
     this.plugin.stopTest();
@@ -1470,13 +1615,13 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
   restartEngine() {
     this.plugin.stop();
     this.plugin.piper.stop();
+    this.check(true);
+  }
+  /** Obsidian opens the tab: look again, voices may have come or gone. */
+  display() {
     this.check();
   }
-  display() {
-    if (!this.engine) {
-      this.check();
-      return;
-    }
+  render() {
     const { containerEl } = this;
     const scroll = containerEl.scrollTop;
     containerEl.empty();
@@ -1556,7 +1701,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
       dd.onChange((value) => {
         this.downloadLang = value;
         this.downloadKey = null;
-        this.display();
+        this.render();
       });
     });
     const chosen = inLang.find((v) => v.key === this.downloadKey);
@@ -1566,7 +1711,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
       if (this.downloadKey) dd.setValue(this.downloadKey);
       dd.onChange((value) => {
         this.downloadKey = value;
-        this.display();
+        this.render();
       });
     });
     if (busy) setting.descEl.addClass("readaloud-download-progress");
@@ -1579,13 +1724,13 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
     const settings = this.plugin.settings;
     const mb = (n) => (n / 1048576).toFixed(0);
     this.downloading = { key: voice.key, text: "Starting the download\u2026" };
-    this.display();
+    this.render();
     try {
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total ? `Downloading\u2026 ${Math.floor(100 * done / total)}% of ${mb(total)} MB` : `Downloading\u2026 ${mb(done)} MB`;
         const desc = this.containerEl.querySelector(".readaloud-download-progress");
         if (desc) desc.setText(this.downloading.text);
-        else this.display();
+        else this.render();
       });
       settings.voice = voice.key;
       await this.plugin.saveSettings();
@@ -1600,7 +1745,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
   readingSection(containerEl) {
     const settings = this.plugin.settings;
     new Setting(containerEl).setName("Reading").setHeading();
-    new Setting(containerEl).setName("Maximum characters at a time").setDesc("Longer paragraphs are cut into pieces of this size, between sentences.").addSlider((sl) => sl.setLimits(120, 800, 20).setValue(settings.maxLength).setDynamicTooltip().onChange(async (value) => {
+    new Setting(containerEl).setName("Longest piece spoken at once (characters)").setDesc("Notes are read sentence by sentence; a sentence longer than this is cut at commas.").addSlider((sl) => sl.setLimits(120, 800, 20).setValue(settings.maxLength).setDynamicTooltip().onChange(async (value) => {
       settings.maxLength = value;
       await this.plugin.saveSettings();
     }));
@@ -1626,7 +1771,7 @@ var ReadAloudSettingTab = class extends PluginSettingTab {
     new Setting(containerEl).setName("Voices folder").setDesc("Leave empty to share the voices with calibre's e-book viewer. Voices from elsewhere (an .onnx file with its .onnx.json) can be put in this folder too.").addText((t) => t.setPlaceholder(this.engine && this.engine.info && this.engine.info.voicesDir || "calibre's folder").setValue(settings.voicesDir).onChange(async (value) => {
       settings.voicesDir = value.trim();
       await this.plugin.saveSettings();
-    })).addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Look for voices again").onClick(() => this.check()));
+    })).addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Look for voices again").onClick(() => this.check(true)));
   }
 };
 var HelpModal = class extends Modal {
@@ -1637,9 +1782,12 @@ var HelpModal = class extends Modal {
   onOpen() {
     this.modalEl.addClass("readaloud-help");
     this.contentEl.empty();
-    MarkdownRenderer.render(this.app, HELP, this.contentEl, "", this.plugin);
+    this.component = new Component();
+    this.component.load();
+    MarkdownRenderer.render(this.app, HELP, this.contentEl, "", this.component);
   }
   onClose() {
+    this.component.unload();
     this.contentEl.empty();
   }
 };

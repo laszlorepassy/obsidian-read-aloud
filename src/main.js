@@ -2,11 +2,12 @@
 
 const {
   Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
-  setIcon, setTooltip,
+  Component, setIcon, setTooltip,
 } = require('obsidian');
 const os = require('os');
 const path = require('path');
-const { segment } = require('./segmenter');
+const { segment, speakable: segmentText } = require('./segmenter');
+const { matchText, keyLength } = require('./text-match');
 const { PiperClient } = require('./piper-client');
 const { findCalibre } = require('./calibre');
 const voices = require('./voices');
@@ -91,24 +92,19 @@ class ReadAloudPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
-      id: 'next',
-      name: 'Next paragraph',
+    const skipCommand = (id, name, direction, by) => this.addCommand({
+      id,
+      name,
       checkCallback: (checking) => {
         if (!this.session) return false;
-        if (!checking) this.skip(1);
+        if (!checking) this.skip(direction, by);
         return true;
       },
     });
-    this.addCommand({
-      id: 'previous',
-      name: 'Previous paragraph',
-      checkCallback: (checking) => {
-        if (!this.session) return false;
-        if (!checking) this.skip(-1);
-        return true;
-      },
-    });
+    skipCommand('next-sentence', 'Next sentence', 1, 'sentence');
+    skipCommand('previous-sentence', 'Previous sentence', -1, 'sentence');
+    skipCommand('next', 'Next paragraph', 1, 'paragraph');
+    skipCommand('previous', 'Previous paragraph', -1, 'paragraph');
 
     this.addCommand({
       id: 'help',
@@ -218,9 +214,9 @@ class ReadAloudPlugin extends Plugin {
     if (where === 'cursor') {
       offset = view.getMode() === 'preview' ? this.previewTopOffset(view, cm) : cm.state.selection.main.head;
     }
-    const pieces = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
-    let seg = pieces.find((p) => p.to > offset);
-    if (!seg && where === 'cursor') seg = pieces[0];
+    const sentences = segment(cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    let seg = sentences.find((p) => p.to > offset);
+    if (!seg && where === 'cursor') seg = sentences[0];
     if (!seg) {
       new Notice('There is nothing to read in this note.');
       return;
@@ -280,7 +276,7 @@ class ReadAloudPlugin extends Plugin {
     return track;
   }
 
-  /** Starts reading `seg`, using the synthesized audio if it was prepared. */
+  /** Starts reading the sentence `seg`, using its audio if it was prepared. */
   play(seg) {
     const session = this.session;
     let track = session.next;
@@ -295,8 +291,8 @@ class ReadAloudPlugin extends Plugin {
     this.highlight(seg);
     this.updateStatus();
 
-    // Prepare the following piece while this one is read.
-    const following = this.pieceAfter(seg.to);
+    // Prepare the following sentence while this one is read.
+    const following = this.sentenceAfter(seg.to);
     if (following) session.next = this.request(following);
 
     for (const chunk of track.queued) this.schedule(track, chunk);
@@ -304,10 +300,14 @@ class ReadAloudPlugin extends Plugin {
     this.checkFinished(track);
   }
 
-  /** The first piece starting at or after `offset` in the note as it is now. */
-  pieceAfter(offset) {
-    const pieces = segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
-    return pieces.find((p) => p.from >= offset) || null;
+  /** The sentences of the note as it is now. */
+  sentences() {
+    return segment(this.session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+  }
+
+  /** The first sentence starting at or after `offset` in the note as it is now. */
+  sentenceAfter(offset) {
+    return this.sentences().find((p) => p.from >= offset) || null;
   }
 
   onAudio(id, samples, rate, last) {
@@ -344,6 +344,7 @@ class ReadAloudPlugin extends Plugin {
     const at = Math.max(ctx.currentTime + 0.03, this.playhead);
     source.start(at);
     this.playhead = at + buffer.duration;
+    if (track.startAt === undefined) track.startAt = at;
     track.pending++;
     track.sources = track.sources || [];
     track.sources.push(source);
@@ -379,27 +380,45 @@ class ReadAloudPlugin extends Plugin {
     const session = this.session;
     if (!this.viewAlive()) { this.stop(); return; }
     const range = readingRange(session.cm) || session.current.seg;
-    const seg = this.pieceAfter(range.to);
+    const seg = this.sentenceAfter(range.to);
     if (!seg) {
       this.stop();
       return;
     }
-    this.playhead = this.audio.currentTime + this.settings.paragraphPause / this.settings.speed;
+    // Piper pauses after each sentence itself; a new paragraph gets more.
+    const newBlock = seg.block.from >= range.block.to;
+    this.playhead = this.audio.currentTime + (newBlock ? this.settings.paragraphPause / this.settings.speed : 0);
     this.play(seg);
   }
 
-  /** Jumps to the next (+1) or previous (-1) piece. */
-  skip(direction) {
+  /**
+   * Jumps to the next (+1) or previous (-1) sentence or paragraph. Going back
+   * a sentence more than a couple of seconds into one starts it again, like
+   * the back button of a player; pressed right after, it goes one further.
+   */
+  skip(direction, by = 'sentence') {
     const session = this.session;
     if (!session || !session.current) return;
     const range = readingRange(session.cm) || session.current.seg;
-    const pieces = segment(session.cm.state.doc.toString(), { maxLength: this.settings.maxLength });
+    const sentences = this.sentences();
     let target;
-    if (direction > 0) {
-      target = pieces.find((p) => p.from >= range.to);
+    if (by === 'paragraph') {
+      if (direction > 0) {
+        target = sentences.find((p) => p.block.from >= range.block.to);
+      } else {
+        const before = sentences.filter((p) => p.block.to <= range.block.from);
+        const block = before.length ? before[before.length - 1].block : range.block;
+        target = sentences.find((p) => p.block.from === block.from);
+      }
+    } else if (direction > 0) {
+      target = sentences.find((p) => p.from >= range.to);
     } else {
-      const before = pieces.filter((p) => p.to <= range.from);
-      target = before[before.length - 1] || pieces.find((p) => p.to > range.from);
+      const track = session.current;
+      const heard = track.startAt === undefined ? 0 : this.audio.currentTime - track.startAt;
+      const before = sentences.filter((p) => p.to <= range.from);
+      target = heard > 2 || !before.length
+        ? sentences.find((p) => p.to > range.from)
+        : before[before.length - 1];
     }
     if (!target) return;
     this.silence();
@@ -477,56 +496,73 @@ class ReadAloudPlugin extends Plugin {
 
   highlight(seg) {
     const session = this.session;
-    showReading(session.cm, { from: seg.from, to: seg.to }, this.settings.follow);
+    showReading(session.cm, { from: seg.from, to: seg.to, block: seg.block }, this.settings.follow);
     this.highlightPreview(seg, this.settings.follow);
   }
 
   /**
-   * In reading view, the editor's highlight is not visible, so the rendered
-   * block holding the piece gets a soft background instead.
+   * In reading view, the editor's highlight is not visible, so the sentence
+   * is found in the rendered text and marked with a CSS custom highlight,
+   * which leaves the rendered page itself untouched.
    */
   highlightPreview(seg, scroll) {
     this.clearPreviewHighlight();
     const session = this.session;
-    if (!session || session.view.getMode() !== 'preview') return;
+    if (!session || session.view.getMode() !== 'preview' || !window.CSS || !CSS.highlights) return;
     try {
       const doc = session.cm.state.doc;
       const range = readingRange(session.cm) || seg;
-      const line = doc.lineAt(range.from).number - 1;
+      const first = doc.lineAt(range.block.from).number - 1;
+      const last = doc.lineAt(range.to).number - 1;
       const preview = session.view.previewMode;
-      const section = preview.renderer.sections.find((s) => s.lineStart <= line && line <= s.lineEnd);
-      if (!section || !section.el) return;
-      section.el.addClass('readaloud-current-block');
-      this.previewEl = section.el;
-      if (!scroll) return;
-      if (section.el.isConnected) section.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      else preview.applyScroll(line);
+      const sections = preview.renderer.sections.filter((s) => s.lineEnd >= first && s.lineStart <= last);
+      if (!sections.length) return;
+      if (scroll && !sections[0].el.isConnected) preview.applyScroll(first);
+      const nodes = [];
+      for (const s of sections) {
+        const walker = document.createTreeWalker(s.el, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+      }
+      const hint = keyLength(segmentText(doc.sliceString(sections[0].lineStart === first
+        ? range.block.from : doc.line(sections[0].lineStart + 1).from, range.from)));
+      const found = matchText(nodes.map((n) => n.nodeValue), seg.text, hint);
+      if (!found) return;
+      const marked = document.createRange();
+      marked.setStart(nodes[found.start[0]], found.start[1]);
+      marked.setEnd(nodes[found.end[0]], found.end[1]);
+      CSS.highlights.set('readaloud-current', new Highlight(marked));
+      if (scroll) {
+        const el = marked.startContainer.parentElement;
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
     } catch (e) { /* reading view internals changed; just no highlight there */ }
   }
 
   clearPreviewHighlight() {
-    if (this.previewEl) this.previewEl.removeClass('readaloud-current-block');
-    this.previewEl = null;
+    try { CSS.highlights.delete('readaloud-current'); } catch (e) { /* not supported */ }
   }
 
   /**
-   * The controls in the status bar: a label and pause/stop buttons. They are
-   * built once and only updated, each button with its own tooltip, so a
-   * tooltip always points at the button under the mouse.
+   * The controls in the status bar: a label, then previous sentence, pause,
+   * next sentence and stop buttons. They are built once and only updated,
+   * each button with its own tooltip, so a tooltip always points at the
+   * button under the mouse.
    */
   buildStatus() {
     this.status = this.addStatusBarItem();
     this.status.addClass('readaloud-status');
     this.statusLabel = this.status.createSpan({ cls: 'readaloud-status-label' });
-    const button = (onClick) => {
+    const button = (icon, tooltip, onClick) => {
       const el = this.status.createDiv({ cls: 'readaloud-status-button clickable-icon' });
       el.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      if (icon) setIcon(el, icon);
+      if (tooltip) setTooltip(el, tooltip, { placement: 'top' });
       return el;
     };
-    this.pauseButton = button(() => this.togglePause());
-    this.stopButton = button(() => this.stop());
-    setIcon(this.stopButton, 'square');
-    setTooltip(this.stopButton, 'Stop', { placement: 'top' });
+    button('chevron-left', 'Previous sentence', () => this.skip(-1, 'sentence'));
+    this.pauseButton = button(null, null, () => this.togglePause());
+    button('chevron-right', 'Next sentence', () => this.skip(1, 'sentence'));
+    button('square', 'Stop', () => this.stop());
   }
 
   updateStatus() {
@@ -580,17 +616,24 @@ class ReadAloudSettingTab extends PluginSettingTab {
     this.downloading = null;    // { key, text }
   }
 
-  /** Asks the speech server about calibre and the voices, then redraws. */
-  async check() {
-    this.engine = { status: 'checking' };
-    this.display();
+  /**
+   * Asks the speech server about calibre and the voices, then redraws. What
+   * was known stays on screen meanwhile, unless `fresh`.
+   */
+  async check(fresh) {
+    if (fresh || !this.engine || this.engine.status !== 'ok') {
+      this.engine = { status: 'checking' };
+      this.render();
+    }
+    let engine;
     try {
       const { voices: list, dir } = await this.plugin.catalog();
-      this.engine = { status: 'ok', info: this.plugin.piper.info, voices: list, dir };
+      engine = { status: 'ok', info: this.plugin.piper.info, voices: list, dir };
     } catch (err) {
-      this.engine = { status: 'error', error: err.message };
+      engine = { status: 'error', error: err.message };
     }
-    this.display();
+    this.engine = engine;
+    this.render();
   }
 
   hide() {
@@ -601,14 +644,15 @@ class ReadAloudSettingTab extends PluginSettingTab {
   restartEngine() {
     this.plugin.stop();
     this.plugin.piper.stop();
+    this.check(true);
+  }
+
+  /** Obsidian opens the tab: look again, voices may have come or gone. */
+  display() {
     this.check();
   }
 
-  display() {
-    if (!this.engine) {
-      this.check();
-      return;
-    }
+  render() {
     const { containerEl } = this;
     const scroll = containerEl.scrollTop;
     containerEl.empty();
@@ -721,7 +765,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
         dd.onChange((value) => {
           this.downloadLang = value;
           this.downloadKey = null;
-          this.display();
+          this.render();
         });
       });
 
@@ -736,7 +780,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
         if (this.downloadKey) dd.setValue(this.downloadKey);
         dd.onChange((value) => {
           this.downloadKey = value;
-          this.display();
+          this.render();
         });
       });
     if (busy) setting.descEl.addClass('readaloud-download-progress');
@@ -752,7 +796,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     const mb = (n) => (n / 1048576).toFixed(0);
     this.downloading = { key: voice.key, text: 'Starting the download…' };
-    this.display();
+    this.render();
     try {
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total
@@ -760,7 +804,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
           : `Downloading… ${mb(done)} MB`;
         const desc = this.containerEl.querySelector('.readaloud-download-progress');
         if (desc) desc.setText(this.downloading.text);
-        else this.display();
+        else this.render();
       });
       settings.voice = voice.key;   // a voice just downloaded is the one wanted
       await this.plugin.saveSettings();
@@ -778,8 +822,8 @@ class ReadAloudSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Reading').setHeading();
 
     new Setting(containerEl)
-      .setName('Maximum characters at a time')
-      .setDesc('Longer paragraphs are cut into pieces of this size, between sentences.')
+      .setName('Longest piece spoken at once (characters)')
+      .setDesc('Notes are read sentence by sentence; a sentence longer than this is cut at commas.')
       .addSlider((sl) => sl
         .setLimits(120, 800, 20)
         .setValue(settings.maxLength)
@@ -848,7 +892,7 @@ class ReadAloudSettingTab extends PluginSettingTab {
       .addExtraButton((b) => b
         .setIcon('refresh-cw')
         .setTooltip('Look for voices again')
-        .onClick(() => this.check()));
+        .onClick(() => this.check(true)));
   }
 }
 
@@ -861,10 +905,13 @@ class HelpModal extends Modal {
   onOpen() {
     this.modalEl.addClass('readaloud-help');
     this.contentEl.empty();
-    MarkdownRenderer.render(this.app, HELP, this.contentEl, '', this.plugin);
+    this.component = new Component();
+    this.component.load();
+    MarkdownRenderer.render(this.app, HELP, this.contentEl, '', this.component);
   }
 
   onClose() {
+    this.component.unload();
     this.contentEl.empty();
   }
 }

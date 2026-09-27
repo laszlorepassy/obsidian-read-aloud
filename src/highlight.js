@@ -4,14 +4,24 @@ const { StateField, StateEffect } = require('@codemirror/state');
 const { Decoration, EditorView } = require('@codemirror/view');
 
 /**
- * The editor side of the highlight: one soft mark over the piece being read.
- * The range lives in the editor state, so it moves along when the note is
- * edited while it is read, and the plugin reads it back from there to know
- * where the next piece starts.
+ * The editor side of the highlight: one soft mark over the sentence being
+ * spoken. The sentence's range, and its paragraph's, live in the editor
+ * state, so they move along when the note is edited while it is read, and
+ * the plugin reads them back from there to know where the next sentence (or
+ * paragraph) starts. Only the sentence is marked.
  */
 const setReading = StateEffect.define();
 
 const mark = Decoration.mark({ class: 'readaloud-current' });
+
+function decorations(range) {
+  return range && range.from < range.to ? Decoration.set([mark.range(range.from, range.to)]) : Decoration.none;
+}
+
+function mapRange(changes, r) {
+  const from = changes.mapPos(r.from, 1);
+  return { from, to: Math.max(from, changes.mapPos(r.to, -1)) };
+}
 
 const readingField = StateField.define({
   create: () => ({ range: null, deco: Decoration.none }),
@@ -19,26 +29,29 @@ const readingField = StateField.define({
     for (const e of tr.effects) {
       if (e.is(setReading)) {
         const r = e.value;
-        if (!r || r.from >= r.to) return { range: null, deco: Decoration.none };
-        return { range: { from: r.from, to: r.to }, deco: Decoration.set([mark.range(r.from, r.to)]) };
+        if (!r) return { range: null, deco: Decoration.none };
+        const range = { from: r.from, to: r.to, block: { from: r.block.from, to: r.block.to } };
+        return { range, deco: decorations(range) };
       }
     }
     if (!value.range || !tr.docChanged) return value;
-    const from = tr.changes.mapPos(value.range.from, 1);
-    const to = Math.max(from, tr.changes.mapPos(value.range.to, -1));
-    return { range: { from, to }, deco: from < to ? Decoration.set([mark.range(from, to)]) : Decoration.none };
+    const range = { ...mapRange(tr.changes, value.range), block: mapRange(tr.changes, value.range.block) };
+    return { range, deco: decorations(range) };
   },
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
 
-/** Highlights [from, to) (null clears it), scrolling it into view if asked. */
+/**
+ * Highlights the sentence { from, to, block: { from, to } } (null clears it),
+ * scrolling it into view if asked.
+ */
 function showReading(view, range, scroll) {
   const effects = [setReading.of(range)];
   if (range && scroll) effects.push(EditorView.scrollIntoView(range.from, { y: 'nearest', yMargin: 80 }));
   view.dispatch({ effects });
 }
 
-/** The highlighted range as it is now, after any edits, or null. */
+/** The highlighted sentence and block as they are now, after any edits, or null. */
 function readingRange(view) {
   const value = view.state.field(readingField, false);
   return value ? value.range : null;

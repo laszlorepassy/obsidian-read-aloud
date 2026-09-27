@@ -1,17 +1,18 @@
 'use strict';
 
 /**
- * Cuts a Markdown note into the pieces that are read aloud one at a time.
+ * Cuts a Markdown note into the sentences that are read aloud one at a time.
  *
- * A piece is a paragraph, heading, list item or table row, so the highlight
- * follows the note's own structure. A paragraph longer than `maxLength`
- * characters is cut between sentences (or, for one endless sentence, at
- * commas and finally between words), so Piper never gets more than a few
- * hundred characters at once and the first words sound almost immediately.
+ * Each sentence knows its block: the paragraph, heading, list item or table
+ * row it is in, which is what gets highlighted, so the highlight follows the
+ * note's own structure. Speaking sentence by sentence means Piper never gets
+ * more than a sentence at once, the first words sound almost immediately,
+ * and the reader can step back and forth by sentences. An endless sentence
+ * is cut at commas and finally between words at `maxLength` characters.
  *
- * Each piece keeps its [from, to) offsets in the source, for the highlight,
- * and the plain text that is spoken: the Markdown syntax, links' targets,
- * embeds, code and comments are left out.
+ * Each sentence keeps its [from, to) offsets in the source, for the
+ * highlight, and the plain text that is spoken: the Markdown syntax, links'
+ * targets, embeds, code and comments are left out.
  */
 
 const FENCE = /^\s*(```+|~~~+)/;
@@ -110,9 +111,13 @@ function blocks(text) {
   return result;
 }
 
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…' };
+
 /** Turns a piece of Markdown source into the words that are spoken. */
 function speakable(source) {
   let s = source;
+  s = s.replace(/^\[\^[^\]]*\]:\s*/, '');                         // footnote definition
+  s = s.replace(/\s+#+\s*$/, '');                                 // closing #s of a heading
   s = s.replace(/%%[\s\S]*?%%/g, ' ');                         // Obsidian comments
   s = s.replace(/<!--[\s\S]*?-->/g, ' ');
   s = s.replace(/!\[\[[^\]]*\]\]/g, ' ');                      // embeds
@@ -136,6 +141,12 @@ function speakable(source) {
   s = s.replace(/(^|[^\w*])\*(?=\S)|(\S)\*(?=[^\w*]|$)/g, '$1$2');
   s = s.replace(/(^|[^\p{L}\p{N}_])_(?=\S)|(\S)_(?=[^\p{L}\p{N}_]|$)/gu, '$1$2');
   s = s.replace(/(^|\s)#([\p{L}\p{N}_/-]+)/gu, '$1$2');         // #tags
+  s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {       // HTML entities
+    if (e[0] !== '#') return ENTITIES[e.toLowerCase()] || m;
+    const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    try { return String.fromCodePoint(code); } catch (err) { return ' '; }
+  });
+  s = s.replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, ' '); // emoji
   if (/^\s*\|/.test(s)) {                                       // table row
     s = s.split('|').map((c) => c.trim()).filter(Boolean).join(', ');
   }
@@ -221,20 +232,28 @@ function cut(text, max) {
 }
 
 /**
- * All pieces of a note, in order: { from, to, text }. `from`/`to` are source
- * offsets without surrounding whitespace, `text` is what is spoken.
+ * The sentences of a note, in reading order: { from, to, text, block }.
+ * `from`/`to` are the sentence's source offsets without surrounding
+ * whitespace, `text` is what is spoken, and `block` is { from, to } of the
+ * paragraph (heading, list item…) it belongs to. A sentence longer than
+ * `maxLength` characters is cut at commas, or else between words.
  */
 function segment(source, { maxLength = 300 } = {}) {
   const result = [];
-  for (const block of blocks(source)) {
-    const body = source.slice(block.from, block.to);
-    for (const [a, b] of cut(body, maxLength)) {
-      const piece = body.slice(a, b);
-      const lead = piece.length - piece.trimStart().length;
-      const trail = piece.length - piece.trimEnd().length;
-      const text = speakable(piece);
-      if (!text) continue;
-      result.push({ from: block.from + a + lead, to: block.from + b - trail, text });
+  for (const b of blocks(source)) {
+    const body = source.slice(b.from, b.to);
+    const block = { from: b.from, to: b.from + body.trimEnd().length };
+    const bounds = [0, ...sentenceStarts(body), body.length];
+    for (let i = 1; i < bounds.length; i++) {
+      const start = bounds[i - 1];
+      for (const [x, y] of cut(body.slice(start, bounds[i]), maxLength)) {
+        const piece = body.slice(start + x, start + y);
+        const text = speakable(piece);
+        if (!text) continue;
+        const lead = piece.length - piece.trimStart().length;
+        const trail = piece.length - piece.trimEnd().length;
+        result.push({ from: b.from + start + x + lead, to: b.from + start + y - trail, text, block });
+      }
     }
   }
   return result;
