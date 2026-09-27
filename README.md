@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Obsidian 1.4.4+" src="https://img.shields.io/badge/Obsidian-1.4.4%2B-7C3AED?logo=obsidian&logoColor=white">
+  <img alt="Obsidian 1.13.1+" src="https://img.shields.io/badge/Obsidian-1.13.1%2B-7C3AED?logo=obsidian&logoColor=white">
   <img alt="Windows, macOS, Linux" src="https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-555">
   <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green">
   <a href="https://paypal.me/repassyl"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black"></a>

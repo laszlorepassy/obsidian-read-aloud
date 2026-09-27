@@ -29,10 +29,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.js
 var main_exports = {};
 __export(main_exports, {
+  DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
+  ReadAloudSettingTab: () => ReadAloudSettingTab,
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
+var fs3 = __toESM(require("fs"), 1);
 var os2 = __toESM(require("os"), 1);
 var path3 = __toESM(require("path"), 1);
 
@@ -778,7 +781,7 @@ function readingRange(view) {
 }
 
 // HELP.md
-var HELP_default = '# Read Aloud \u2013 user guide\n\nRead Aloud reads the open note aloud, sentence by sentence, and softly\nhighlights the sentence being read. The voice is **Piper**, a neural text-to-speech\nengine that runs on your own computer: no internet connection is needed\nwhile reading, and your notes never leave your computer.\n\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\ntablets). Setting it up takes three steps:\n\n1. Install calibre, which brings Piper with it.\n2. Install the plugin in your vault.\n3. Download a voice in the plugin\'s settings.\n\n## Why calibre?\n\nPiper exists for Windows, macOS and Linux as a program of its own too, but\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\n(calibre-ebook.com). calibre has a one-click installer on every system,\nkeeps Piper up to date, and knows where to download voices from, in 58\nlanguages. You don\'t have to use calibre itself for anything; it only has\nto be installed. If you already listen to books with calibre\'s e-book\nviewer, Read Aloud uses the same voices.\n\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\nbest.\n\n## 1. Install calibre\n\n### Windows\n\n1. Go to calibre-ebook.com/download_windows and download the installer\n   (*calibre 64bit*).\n2. Run it and click through with the default settings. calibre goes to\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\n\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\n\n### macOS\n\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\n2. Open it and drag **calibre** into **Applications**.\n3. Start calibre once from Applications, so macOS lets it run. After that\n   you can close it.\n\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\nhome folder).\n\n### Linux\n\nMost distributions\' own calibre packages are **too old** (Debian 13 and\nUbuntu 24.04, for example, have calibre versions without the built-in\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\nmore, you are done. Otherwise use one of these:\n\n**Official installer (recommended).** In a terminal:\n\n```bash\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\n```\n\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\nIf it complains about missing libraries, install them first; on\nDebian/Ubuntu:\n\n```bash\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\n```\n\nWithout admin rights, calibre can go into your home folder instead:\n\n```bash\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\n```\n\n**Flatpak** (from Flathub):\n\n```bash\nflatpak install flathub com.calibre_ebook.calibre\n```\n\nRead Aloud finds calibre in any of these places by itself.\n\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\nprograms outside it unless you allow it. Allow it once with:\n\n```bash\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\n```\n\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\nnone of this.)\n\n## 2. Install the plugin\n\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\nby hand:\n\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\n   (create `plugins` if it is not there). Hidden folders are shown with\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\n   on Windows, `.obsidian` is visible as it is.\n2. In it, create a folder named `read-aloud`.\n3. Put these three files from the plugin\'s GitHub page\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\n   `main.js`, `manifest.json` and `styles.css`.\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\n   off, turn them on ("Turn on community plugins"). Click the refresh\n   button next to *Installed plugins*, then turn on **Read Aloud**.\n\nTo update the plugin later, replace the three files, then turn Read Aloud\noff and on again (or restart Obsidian).\n\n## 3. Download a voice\n\nOpen **Settings \u2192 Read Aloud**.\n\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\n   was found. If it shows \u2717, see Troubleshooting.\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\n   language of your system first.\n3. Choose a **voice to download** and click **Download**. Voices are\n   20\u2013120 MB; the progress is shown under the voice.\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\n     a bit better but is slower; *low* and *x low* are the smallest.\n   - A \u2713 after a name means that voice is already installed.\n4. The voice just downloaded becomes the one that reads. Click the \u25B6\n   button next to **Voice** to hear it.\n\nYou can download as many voices as you like and switch between them under\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\ne-book viewer can use them too, and they need downloading only once per\ncomputer.\n\n## Reading\n\n### Starting\n\n- **Speaker icon** in the left ribbon: starts at the cursor.\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\n  sentence you clicked.\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\n  - *Read Aloud: Read from the cursor*\n  - *Read Aloud: Read note from the start*\n\nIn reading view, reading starts at the top of the screen.\n\nThe first start takes a few seconds while calibre starts and the voice\nloads; meanwhile the status bar shows "Starting\u2026". After that, reading\nstarts almost immediately, and the next sentence is prepared while the\ncurrent one is read, so there are no waits between them.\n\n### Controls while reading\n\nWhile reading, the controls appear in the status bar at the bottom right:\n\n| Button | What it does |\n|---|---|\n| \u2039 | Back one sentence (or, more than two seconds into a sentence, to its start) |\n| \u23F8 / \u25B6 | Pause / resume |\n| \u203A | Forward one sentence |\n| \u23F9 | Stop |\n\nThe speaker icon in the ribbon also pauses and resumes.\n\nThese are commands too, and you can give them hotkeys under\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\n\n- *Pause / resume*\n- *Stop reading*\n- *Next sentence* / *Previous sentence*\n- *Next paragraph* / *Previous paragraph* \u2013 skips to the start of the next\n  paragraph, or back to the start of the previous one\n\nTip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next and\nprevious sentence, and Ctrl+Alt+\u2193 / Ctrl+Alt+\u2191 for next and previous\nparagraph work well.\n\n### What is read, and what is not\n\nParagraphs, headings, list items, quotes and table rows are read, sentence\nby sentence. An unusually long sentence is cut at commas (at 300\ncharacters by default), so reading never slows down.\n\nLeft out:\n\n- the properties at the top of the note (front matter),\n- code blocks, math and `%% comments %%`,\n- embedded images and notes,\n- link addresses (the link text is read),\n- Markdown syntax (`**`, `#`, `-` and so on).\n\n### Editing while reading\n\nYou can keep typing in the note while it is read: the highlight and the\nreading position move along with your edits.\n\nIn reading view, the sentence is highlighted in the rendered text too. Opening another note in the\nsame tab stops reading.\n\n## Settings\n\n**Speech engine**\n\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\n  *Check again* looks again, e.g. after installing or updating calibre.\n\n**Voice**\n\n- **Voice** \u2013 the installed voice that reads; \u25B6 plays a sample sentence.\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\n  the voice, which causes a short pause.\n\n**Download voices** \u2013 see step 3.\n\n**Reading**\n\n- **Longest piece spoken at once** \u2013 a sentence longer than this many\n  characters is cut at commas.\n- **Pause between paragraphs** \u2013 in seconds; sentences within a paragraph\n  follow each other with Piper\'s own short pause.\n- **Scroll along** \u2013 keeps the sentence being read on screen.\n\n**Advanced** \u2013 both can be left empty:\n\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\n  portable version on Windows.\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\n  folder, which is shown greyed out in the field. Piper voices from\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\n  copied into this folder too; they then appear under **Voice**.\n\n## Troubleshooting\n\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\nplace. Install it as in step 1, then click *Check\nagain* in the settings. For portable or unusual installs, enter the path of\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\n\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\ncause: use the official installer or Flatpak instead (see\nLinux).\n\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\n\n**The download fails** \u2013 it needs an internet connection to\nhuggingface.co. A firewall or proxy may block it. You can also download a\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\nand the `.onnx.json` file) and copy them into the voices folder.\n\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\nthe note at the end of Linux.\n\n**No sound** \u2013 check that the system volume is not muted and that the right\noutput device is selected; try the \u25B6 button next to *Voice*.\n\n**The first paragraph takes long** \u2013 only the very first start after\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\nmemory it used) needs a few seconds to load the voice.\n';
+var HELP_default = '# Read Aloud \u2013 user guide\n\nRead Aloud reads the open note aloud, sentence by sentence, and softly\nhighlights the sentence being read. The voice is **Piper**, a neural text-to-speech\nengine that runs on your own computer: no internet connection is needed\nwhile reading, and your notes never leave your computer.\n\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\ntablets), with **Obsidian 1.13.1 or newer** (Settings \u2192 About shows your\nversion; update it there if needed). Setting it up takes three steps:\n\n1. Install calibre, which brings Piper with it.\n2. Install the plugin in your vault.\n3. Download a voice in the plugin\'s settings.\n\n## Why calibre?\n\nPiper exists for Windows, macOS and Linux as a program of its own too, but\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\n(calibre-ebook.com). calibre has a one-click installer on every system,\nkeeps Piper up to date, and knows where to download voices from, in 58\nlanguages. You don\'t have to use calibre itself for anything; it only has\nto be installed. If you already listen to books with calibre\'s e-book\nviewer, Read Aloud uses the same voices.\n\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\nbest.\n\n## 1. Install calibre\n\n### Windows\n\n1. Go to calibre-ebook.com/download_windows and download the installer\n   (*calibre 64bit*).\n2. Run it and click through with the default settings. calibre goes to\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\n\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\n\n### macOS\n\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\n2. Open it and drag **calibre** into **Applications**.\n3. Start calibre once from Applications, so macOS lets it run. After that\n   you can close it.\n\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\nhome folder).\n\n### Linux\n\nMost distributions\' own calibre packages are **too old** (Debian 13 and\nUbuntu 24.04, for example, have calibre versions without the built-in\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\nmore, you are done. Otherwise use one of these:\n\n**Official installer (recommended).** In a terminal:\n\n```bash\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\n```\n\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\nIf it complains about missing libraries, install them first; on\nDebian/Ubuntu:\n\n```bash\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\n```\n\nWithout admin rights, calibre can go into your home folder instead:\n\n```bash\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\n```\n\n**Flatpak** (from Flathub):\n\n```bash\nflatpak install flathub com.calibre_ebook.calibre\n```\n\nRead Aloud finds calibre in any of these places by itself.\n\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\nprograms outside it unless you allow it. Allow it once with:\n\n```bash\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\n```\n\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\nnone of this.)\n\n## 2. Install the plugin\n\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\nby hand:\n\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\n   (create `plugins` if it is not there). Hidden folders are shown with\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\n   on Windows, `.obsidian` is visible as it is.\n2. In it, create a folder named `read-aloud`.\n3. Put these three files from the plugin\'s GitHub page\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\n   `main.js`, `manifest.json` and `styles.css`.\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\n   off, turn them on ("Turn on community plugins"). Click the refresh\n   button next to *Installed plugins*, then turn on **Read Aloud**.\n\nTo update the plugin later, replace the three files, then turn Read Aloud\noff and on again (or restart Obsidian).\n\n## 3. Download a voice\n\nOpen **Settings \u2192 Read Aloud**.\n\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\n   was found. If it shows \u2717, see Troubleshooting.\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\n   language of your system first.\n3. Choose a **voice to download** and click **Download**. Voices are\n   20\u2013120 MB; the progress is shown under the voice.\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\n     a bit better but is slower; *low* and *x low* are the smallest.\n   - A \u2713 after a name means that voice is already installed.\n4. The voice just downloaded becomes the one that reads. Click **Listen\n   to this voice** to hear it.\n\nYou can download as many voices as you like and switch between them under\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\ne-book viewer can use them too, and they need downloading only once per\ncomputer.\n\n## Reading\n\n### Starting\n\n- **Speaker icon** in the left ribbon: starts at the cursor.\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\n  sentence you clicked.\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\n  - *Read Aloud: Read from the cursor*\n  - *Read Aloud: Read note from the start*\n\nIn reading view, reading starts at the top of the screen.\n\nThe first start takes a few seconds while calibre starts and the voice\nloads; meanwhile the status bar shows "Starting\u2026". After that, reading\nstarts almost immediately, and the next sentence is prepared while the\ncurrent one is read, so there are no waits between them.\n\n### Controls while reading\n\nWhile reading, the controls appear in the status bar at the bottom right:\n\n| Button | What it does |\n|---|---|\n| \u2039 | Back one sentence (or, more than two seconds into a sentence, to its start) |\n| \u23F8 / \u25B6 | Pause / resume |\n| \u203A | Forward one sentence |\n| \u23F9 | Stop |\n\nThe speaker icon in the ribbon also pauses and resumes.\n\nThese are commands too, and you can give them hotkeys under\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\n\n- *Pause / resume*\n- *Stop reading*\n- *Next sentence* / *Previous sentence*\n- *Next paragraph* / *Previous paragraph* \u2013 skips to the start of the next\n  paragraph, or back to the start of the previous one\n\nTip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next and\nprevious sentence, and Ctrl+Alt+\u2193 / Ctrl+Alt+\u2191 for next and previous\nparagraph work well.\n\n### What is read, and what is not\n\nParagraphs, headings, list items, quotes and table rows are read, sentence\nby sentence. An unusually long sentence is cut at commas (at 300\ncharacters by default), so reading never slows down.\n\nLeft out:\n\n- the properties at the top of the note (front matter),\n- code blocks, math and `%% comments %%`,\n- embedded images and notes,\n- link addresses (the link text is read),\n- Markdown syntax (`**`, `#`, `-` and so on).\n\n### Editing while reading\n\nYou can keep typing in the note while it is read: the highlight and the\nreading position move along with your edits.\n\nIn reading view, the sentence is highlighted in the rendered text too. Opening another note in the\nsame tab stops reading.\n\n## Settings\n\nAll of these can also be found with the search box at the top of\nObsidian\'s settings.\n\n**Speech engine**\n\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\n  *Check again* looks again, e.g. after installing or updating calibre.\n\n**Voice**\n\n- **Voice** \u2013 the installed voice that reads.\n- **Listen to this voice** \u2013 click it to hear a sample sentence.\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\n  the voice, which causes a short pause.\n\n**Download voices** \u2013 see step 3.\n\n**Reading**\n\n- **Longest piece spoken at once** \u2013 a sentence longer than this many\n  characters is cut at commas.\n- **Pause between paragraphs** \u2013 in seconds; sentences within a paragraph\n  follow each other with Piper\'s own short pause.\n- **Scroll along** \u2013 keeps the sentence being read on screen.\n\n**Advanced** \u2013 both can be left empty:\n\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\n  portable version on Windows.\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\n  folder, which is shown under *Speech engine*. Piper voices from\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\n  copied into this folder too; they then appear under **Voice**.\n\n## Troubleshooting\n\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\nplace. Install it as in step 1, then click *Check\nagain* in the settings. For portable or unusual installs, enter the path of\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\n\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\ncause: use the official installer or Flatpak instead (see\nLinux).\n\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\n\n**The download fails** \u2013 it needs an internet connection to\nhuggingface.co. A firewall or proxy may block it. You can also download a\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\nand the `.onnx.json` file) and copy them into the voices folder.\n\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\nthe note at the end of Linux.\n\n**No sound** \u2013 check that the system volume is not muted and that the right\noutput device is selected; try *Listen to this voice* in the settings.\n\n**The first paragraph takes long** \u2013 only the very first start after\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\nmemory it used) needs a few seconds to load the voice.\n';
 
 // src/piper_server.py
 var piper_server_default = `# -*- coding: utf-8 -*-
@@ -1077,7 +1080,7 @@ var DEFAULT_SETTINGS = {
 };
 function userLocales() {
   const list = [...navigator.languages || [], navigator.language || ""];
-  if (typeof import_obsidian.getLanguage === "function") list.push((0, import_obsidian.getLanguage)());
+  list.push((0, import_obsidian.getLanguage)());
   return list.filter(Boolean);
 }
 var ReadAloudPlugin = class extends import_obsidian.Plugin {
@@ -1649,7 +1652,8 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
-    this.engine = null;
+    this.engine = { status: "checking" };
+    this.needsCheck = true;
     this.downloadLang = null;
     this.downloadKey = null;
     this.downloading = null;
@@ -1659,9 +1663,9 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
    * was known stays on screen meanwhile, unless `fresh`.
    */
   async check(fresh) {
-    if (fresh || !this.engine || this.engine.status !== "ok") {
+    if (fresh || this.engine.status !== "ok") {
       this.engine = { status: "checking" };
-      this.render();
+      this.update();
     }
     let engine;
     try {
@@ -1671,46 +1675,141 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
       engine = { status: "error", error: err.message };
     }
     this.engine = engine;
-    this.render();
+    this.update();
   }
   hide() {
     this.plugin.stopTest();
+    this.needsCheck = true;
+    super.hide();
   }
   /** Starts the speech server anew, e.g. after calibre was installed. */
   restartEngine() {
     this.plugin.stop();
     this.plugin.piper.stop();
     this.plugin.forgetCalibre();
-    this.autoCalibre = void 0;
     this.check(true);
   }
-  /** Obsidian opens the tab: look again, voices may have come or gone. */
-  display() {
-    this.check();
-  }
-  render() {
-    const { containerEl } = this;
-    const scroll = containerEl.scrollTop;
-    containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("User guide").setDesc("Setting up calibre and voices on Windows, macOS and Linux, and how to use the plugin.").addButton((b) => b.setButtonText("Open help").onClick(() => new HelpModal(this.app, this.plugin).open()));
-    this.engineSection(containerEl);
-    if (this.engine.status === "ok") {
-      this.voiceSection(containerEl);
-      this.downloadSection(containerEl);
+  getControlValue(key) {
+    if (key === "voice" && this.engine.status === "ok") {
+      return chooseVoice(this.engine.voices, this.plugin.settings.voice, userLocales()) || "";
     }
-    this.readingSection(containerEl);
-    this.advancedSection(containerEl);
-    containerEl.scrollTop = scroll;
+    return super.getControlValue(key);
   }
-  engineSection(containerEl) {
-    new import_obsidian.Setting(containerEl).setName("Speech engine").setHeading();
+  async setControlValue(key, value) {
+    this.plugin.settings[key] = typeof value === "string" ? value.trim() : value;
+    await this.plugin.saveSettings();
+    if (key === "voice") this.plugin.voiceChanged();
+    if (key === "calibreDebug") this.plugin.forgetCalibre();
+  }
+  getSettingDefinitions() {
+    return [
+      {
+        name: "User guide",
+        desc: "Setting up calibre and voices on Windows, macOS and Linux, and how to use the plugin.",
+        aliases: ["help", "install"],
+        render: (setting) => {
+          setting.addButton((b) => b.setButtonText("Open help").onClick(() => new HelpModal(this.app, this.plugin).open()));
+        }
+      },
+      {
+        type: "group",
+        heading: "Speech engine",
+        items: [{
+          name: "calibre with Piper",
+          desc: "Read Aloud speaks with the Piper built into calibre 8.8 or newer.",
+          aliases: ["calibre", "engine", "status"],
+          render: (setting) => this.renderEngine(setting)
+        }]
+      },
+      {
+        type: "group",
+        heading: "Voice",
+        items: this.voiceItems()
+      },
+      {
+        type: "group",
+        heading: "Download voices",
+        items: this.engine.status !== "ok" ? [this.waitingItem("Voice to download")] : [
+          {
+            name: "Language",
+            desc: "Voices in 58 languages, from the Piper project (huggingface.co/rhasspy/piper-voices).",
+            aliases: ["download", "voices"],
+            render: (setting) => this.renderLanguage(setting)
+          },
+          {
+            name: "Voice to download",
+            desc: 'Most voices are 20\u2013120 MB. "medium" is a good balance of quality and speed.',
+            aliases: ["download"],
+            render: (setting) => this.renderDownload(setting)
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "Reading",
+        items: [
+          {
+            name: "Longest piece spoken at once (characters)",
+            desc: "Notes are read sentence by sentence; a sentence longer than this is cut at commas.",
+            control: { type: "slider", key: "maxLength", min: 120, max: 800, step: 20, defaultValue: 300 }
+          },
+          {
+            name: "Pause between paragraphs (seconds)",
+            control: {
+              type: "slider",
+              key: "paragraphPause",
+              min: 0,
+              max: 2,
+              step: 0.1,
+              defaultValue: 0.5,
+              displayFormat: (v) => `${v.toFixed(1)} s`
+            }
+          },
+          {
+            name: "Scroll along",
+            desc: "Keep the sentence being read in view.",
+            control: { type: "toggle", key: "follow", defaultValue: true }
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "Advanced",
+        items: [
+          {
+            name: "Path of calibre-debug",
+            desc: "Leave empty to find calibre automatically. Needed only for calibre in an unusual place, such as the portable version on Windows. A folder (Calibre2, calibre.app) is fine too.",
+            control: {
+              type: "text",
+              key: "calibreDebug",
+              placeholder: "Found automatically",
+              validate: (value) => validCalibrePath(value)
+            }
+          },
+          {
+            name: "Voices folder",
+            desc: `Leave empty to share the voices with calibre's e-book viewer. Voices from elsewhere (an .onnx file with its .onnx.json) can be put in this folder too. Click "Check again" above after changing it.`,
+            control: { type: "text", key: "voicesDir", placeholder: "calibre's voices folder" }
+          }
+        ]
+      }
+    ];
+  }
+  renderEngine(setting) {
+    if (this.needsCheck) {
+      this.needsCheck = false;
+      window.setTimeout(() => this.check(), 0);
+    }
     const e = this.engine;
-    const setting = new import_obsidian.Setting(containerEl).setName("calibre with Piper");
     if (e.status === "checking") {
       setting.setDesc("Looking for calibre\u2026");
     } else if (e.status === "ok") {
       const where = this.plugin.calibre();
-      setting.setDesc(`\u2713 calibre ${e.info.calibre} found: ${where ? where.label : ""}`);
+      setting.setDesc(createFragment((f) => {
+        f.appendText(`\u2713 calibre ${e.info.calibre} found: ${where ? where.label : ""}`);
+        f.createEl("br");
+        f.appendText(`Voices folder: ${e.dir}`);
+      }));
     } else {
       setting.setDesc(createFragment((f) => {
         f.createSpan({ cls: "readaloud-error", text: `\u2717 ${e.error}` });
@@ -1720,39 +1819,58 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
         f.appendText(", then click Check again. The help tells how, for each system.");
       }));
     }
-    setting.addButton((b) => b.setButtonText("Check again").setDisabled(e.status === "checking").onClick(() => {
-      this.restartEngine();
-    }));
+    setting.addButton((b) => b.setButtonText("Check again").setDisabled(e.status === "checking").onClick(() => this.restartEngine()));
   }
-  voiceSection(containerEl) {
-    const settings = this.plugin.settings;
-    new import_obsidian.Setting(containerEl).setName("Voice").setHeading();
+  /** A row standing in for what needs calibre, until it is found. */
+  waitingItem(name) {
+    return {
+      name,
+      desc: this.engine.status === "checking" ? "Looking for calibre\u2026" : "Available once calibre is found.",
+      aliases: ["voice", "download"]
+    };
+  }
+  voiceItems() {
+    const speed = {
+      name: "Speed",
+      desc: "At 1, the voice keeps its own pace. Changing the speed reloads the voice (a few seconds).",
+      control: {
+        type: "slider",
+        key: "speed",
+        min: 0.6,
+        max: 2,
+        step: 0.05,
+        defaultValue: 1,
+        displayFormat: (v) => `${v.toFixed(2)}\xD7`
+      }
+    };
+    if (this.engine.status !== "ok") return [this.waitingItem("Voice"), speed];
     const installed = this.engine.voices.filter((v) => v.installed).sort(byLanguageThenName);
-    const current = chooseVoice(this.engine.voices, settings.voice, userLocales());
-    const setting = new import_obsidian.Setting(containerEl).setName("Voice");
     if (!installed.length) {
-      setting.setDesc("No voice is installed yet. Download one below.");
-      return;
+      return [{ name: "Voice", desc: "No voice is installed yet. Download one below." }, speed];
     }
-    setting.setDesc("The voice that reads your notes.").addDropdown((dd) => {
-      for (const v of installed) dd.addOption(v.key, voiceLabel(v));
-      dd.setValue(current);
-      dd.onChange(async (value) => {
-        settings.voice = value;
-        await this.plugin.saveSettings();
-        this.plugin.voiceChanged();
-      });
-    }).addExtraButton((b) => b.setIcon("play").setTooltip("Listen to this voice").onClick(() => {
-      const key = settings.voice && installed.some((v) => v.key === settings.voice) ? settings.voice : current;
-      this.plugin.testVoice(installed.find((v) => v.key === key)).catch((err) => new import_obsidian.Notice("Read Aloud: " + err.message));
-    }));
-    new import_obsidian.Setting(containerEl).setName("Speed").setDesc("At 1, the voice keeps its own pace. Changing the speed reloads the voice (a few seconds).").addSlider((sl) => sl.setLimits(0.6, 2, 0.05).setValue(settings.speed).setDynamicTooltip().onChange(async (value) => {
-      settings.speed = value;
-      await this.plugin.saveSettings();
-    }));
+    const options = {};
+    for (const v of installed) options[v.key] = voiceLabel(v);
+    return [
+      {
+        name: "Voice",
+        desc: "The voice that reads your notes.",
+        control: { type: "dropdown", key: "voice", options }
+      },
+      {
+        name: "Listen to this voice",
+        desc: "Reads a sample sentence with the voice chosen above.",
+        aliases: ["test", "sample", "try"],
+        action: () => {
+          const key = this.getControlValue("voice");
+          const voice = installed.find((v) => v.key === key);
+          if (voice) this.plugin.testVoice(voice).catch((err) => new import_obsidian.Notice("Read Aloud: " + err.message));
+        }
+      },
+      speed
+    ];
   }
-  downloadSection(containerEl) {
-    new import_obsidian.Setting(containerEl).setName("Download voices").setHeading();
+  /** The voices of the language chosen for download, and that language. */
+  downloadChoices() {
     const all = this.engine.voices.filter((v) => v.lang);
     const langs = languages(all);
     if (!this.downloadLang || !langs.some((l) => l.lang === this.downloadLang)) {
@@ -1762,26 +1880,35 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     if (!inLang.some((v) => v.key === this.downloadKey)) {
       this.downloadKey = (inLang.find((v) => !v.installed) || inLang[0] || {}).key;
     }
-    new import_obsidian.Setting(containerEl).setName("Language").setDesc(`${langs.length} languages, from the voices of the Piper project (huggingface.co/rhasspy/piper-voices).`).addDropdown((dd) => {
+    return { langs, inLang };
+  }
+  renderLanguage(setting) {
+    const { langs } = this.downloadChoices();
+    setting.addDropdown((dd) => {
       for (const l of langs) dd.addOption(l.lang, l.label);
       dd.setValue(this.downloadLang);
       dd.onChange((value) => {
         this.downloadLang = value;
         this.downloadKey = null;
-        this.render();
+        this.update();
       });
     });
+  }
+  renderDownload(setting) {
+    const { inLang } = this.downloadChoices();
     const chosen = inLang.find((v) => v.key === this.downloadKey);
     const busy = this.downloading;
-    const setting = new import_obsidian.Setting(containerEl).setName("Voice to download").setDesc(busy ? busy.text : chosen && chosen.installed ? "\u2713 Installed." : 'Most voices are 20\u2013120 MB. "medium" is a good balance of quality and speed.').addDropdown((dd) => {
+    if (busy) setting.setDesc(busy.text);
+    else if (chosen && chosen.installed) setting.setDesc("This voice is installed.");
+    this.progressEl = busy ? setting.descEl : null;
+    setting.addDropdown((dd) => {
       for (const v of inLang) dd.addOption(v.key, voiceName(v) + (v.installed ? " \u2713" : ""));
       if (this.downloadKey) dd.setValue(this.downloadKey);
       dd.onChange((value) => {
         this.downloadKey = value;
-        this.render();
+        this.update();
       });
     });
-    if (busy) setting.descEl.addClass("readaloud-download-progress");
     setting.addButton((b) => {
       b.setButtonText(chosen && chosen.installed ? "Download again" : "Download").setDisabled(!chosen || !!busy).onClick(() => this.download(chosen));
       if (chosen && !chosen.installed) b.setCta();
@@ -1791,14 +1918,12 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     const settings = this.plugin.settings;
     const mb = (n) => (n / 1048576).toFixed(0);
     this.downloading = { key: voice.key, text: "Starting the download\u2026" };
-    this.render();
+    this.update();
     try {
       await this.plugin.startPiper();
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total ? `Downloading\u2026 ${Math.floor(100 * done / total)}% of ${mb(total)} MB` : `Downloading\u2026 ${mb(done)} MB`;
-        const desc = this.containerEl.querySelector(".readaloud-download-progress");
-        if (desc) desc.setText(this.downloading.text);
-        else this.render();
+        if (this.progressEl && this.progressEl.isConnected) this.progressEl.setText(this.downloading.text);
       });
       settings.voice = voice.key;
       await this.plugin.saveSettings();
@@ -1810,40 +1935,12 @@ var ReadAloudSettingTab = class extends import_obsidian.PluginSettingTab {
     this.downloading = null;
     await this.check();
   }
-  readingSection(containerEl) {
-    const settings = this.plugin.settings;
-    new import_obsidian.Setting(containerEl).setName("Reading").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Longest piece spoken at once (characters)").setDesc("Notes are read sentence by sentence; a sentence longer than this is cut at commas.").addSlider((sl) => sl.setLimits(120, 800, 20).setValue(settings.maxLength).setDynamicTooltip().onChange(async (value) => {
-      settings.maxLength = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Pause between paragraphs (seconds)").addSlider((sl) => sl.setLimits(0, 2, 0.1).setValue(settings.paragraphPause).setDynamicTooltip().onChange(async (value) => {
-      settings.paragraphPause = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Scroll along").setDesc("Keep the highlighted paragraph in view.").addToggle((t) => t.setValue(settings.follow).onChange(async (value) => {
-      settings.follow = value;
-      await this.plugin.saveSettings();
-    }));
-  }
-  advancedSection(containerEl) {
-    const settings = this.plugin.settings;
-    new import_obsidian.Setting(containerEl).setName("Advanced").setHeading();
-    if (this.autoCalibre === void 0) this.autoCalibre = findCalibre("");
-    const found = this.autoCalibre;
-    new import_obsidian.Setting(containerEl).setName("Path of calibre-debug").setDesc("Leave empty to find calibre automatically. Needed only for calibre in an unusual place, such as the portable version on Windows.").addText((t) => t.setPlaceholder(found ? found.label : "calibre not found").setValue(settings.calibreDebug).onChange(async (value) => {
-      settings.calibreDebug = value.trim();
-      this.plugin.forgetCalibre();
-      await this.plugin.saveSettings();
-    })).addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Check again").onClick(() => {
-      this.restartEngine();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Voices folder").setDesc("Leave empty to share the voices with calibre's e-book viewer. Voices from elsewhere (an .onnx file with its .onnx.json) can be put in this folder too.").addText((t) => t.setPlaceholder(this.engine && this.engine.info && this.engine.info.voicesDir || "calibre's folder").setValue(settings.voicesDir).onChange(async (value) => {
-      settings.voicesDir = value.trim();
-      await this.plugin.saveSettings();
-    })).addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Look for voices again").onClick(() => this.check(true)));
-  }
 };
+function validCalibrePath(value) {
+  if (!value || !value.trim() || process.env.FLATPAK_ID) return;
+  const found = findCalibre(value);
+  if (!fs3.existsSync(found.file)) return `There is no ${found.file}.`;
+}
 var HelpModal = class extends import_obsidian.Modal {
   constructor(app, plugin) {
     super(app);
@@ -1862,3 +1959,8 @@ var HelpModal = class extends import_obsidian.Modal {
   }
 };
 var main_default = ReadAloudPlugin;
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  DEFAULT_SETTINGS,
+  ReadAloudSettingTab
+});

@@ -6,7 +6,8 @@ engine that runs on your own computer: no internet connection is needed
 while reading, and your notes never leave your computer.
 
 Read Aloud works on **Windows, macOS and Linux** desktops (not on phones or
-tablets). Setting it up takes three steps:
+tablets), with **Obsidian 1.13.1 or newer** (Settings → About shows your
+version; update it there if needed). Setting it up takes three steps:
 
 1. Install calibre, which brings Piper with it.
 2. Install the plugin in your vault.
@@ -127,8 +128,8 @@ Open **Settings → Read Aloud**.
    - Quality: *medium* is a good balance of sound and speed; *high* sounds
      a bit better but is slower; *low* and *x low* are the smallest.
    - A ✓ after a name means that voice is already installed.
-4. The voice just downloaded becomes the one that reads. Click the ▶
-   button next to **Voice** to hear it.
+4. The voice just downloaded becomes the one that reads. Click **Listen
+   to this voice** to hear it.
 
 You can download as many voices as you like and switch between them under
 **Voice**. The voices are stored in calibre's own folder, so calibre's
@@ -203,6 +204,9 @@ same tab stops reading.
 
 ## Settings
 
+All of these can also be found with the search box at the top of
+Obsidian's settings.
+
 **Speech engine**
 
 - **calibre with Piper** – whether calibre was found, and which version.
@@ -210,7 +214,8 @@ same tab stops reading.
 
 **Voice**
 
-- **Voice** – the installed voice that reads; ▶ plays a sample sentence.
+- **Voice** – the installed voice that reads.
+- **Listen to this voice** – click it to hear a sample sentence.
 - **Speed** – 1 is the voice's own pace. Changing it while reading reloads
   the voice, which causes a short pause.
 
@@ -229,7 +234,7 @@ same tab stops reading.
 - **Path of calibre-debug** – for calibre in an unusual place, such as the
   portable version on Windows.
 - **Voices folder** – where the voices are kept; empty means calibre's own
-  folder, which is shown greyed out in the field. Piper voices from
+  folder, which is shown under *Speech engine*. Piper voices from
   anywhere else (an `.onnx` file together with its `.onnx.json`) can be
   copied into this folder too; they then appear under **Voice**.
 
@@ -258,7 +263,7 @@ or updating calibre usually helps. On Linux with Obsidian as a Flatpak, see
 the note at the end of Linux.
 
 **No sound** – check that the system volume is not muted and that the right
-output device is selected; try the ▶ button next to *Voice*.
+output device is selected; try *Listen to this voice* in the settings.
 
 **The first paragraph takes long** – only the very first start after
 opening Obsidian (or after 10 idle minutes, when Read Aloud frees the

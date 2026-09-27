@@ -22,9 +22,6 @@ export default defineConfig([
       // src/package.json only marks src as ES modules; the dependencies are
       // in the root package.json.
       'import/no-extraneous-dependencies': ['error', { packageDir: [import.meta.dirname] }],
-      // The declarative settings API needs Obsidian 1.13; Read Aloud
-      // supports Obsidian from 1.4.4.
-      'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
     },
   },
 ]);

@@ -1,7 +1,8 @@
 import {
-  Plugin, PluginSettingTab, Setting, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
+  Plugin, PluginSettingTab, Notice, MarkdownView, FileSystemAdapter, Modal, MarkdownRenderer,
   Component, setIcon, setTooltip, getLanguage,
 } from 'obsidian';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { segment, speakable as segmentText } from './segmenter.js';
@@ -25,12 +26,11 @@ const DEFAULT_SETTINGS = {
 
 /**
  * The user's languages, most preferred first, e.g. ['hu-HU', 'en-US']: the
- * system's, which notes are most likely written in, then Obsidian's own
- * (getLanguage exists since Obsidian 1.8.7).
+ * system's, which notes are most likely written in, then Obsidian's own.
  */
 function userLocales() {
   const list = [...(navigator.languages || []), navigator.language || ''];
-  if (typeof getLanguage === 'function') list.push(getLanguage());
+  list.push(getLanguage());
   return list.filter(Boolean);
 }
 
@@ -648,13 +648,21 @@ class ReadAloudPlugin extends Plugin {
   }
 }
 
+/**
+ * The settings, declared for Obsidian 1.13's settings API, so they show up
+ * in the settings search too. What depends on calibre (its status, the
+ * installed voices, the voices to download) comes from the speech server,
+ * which is asked each time the tab is shown; `update()` redraws the tab
+ * with the answer.
+ */
 class ReadAloudSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
     // What the speech server told: { status: 'checking' | 'ok' | 'error',
     // info, voices, dir, error }, plus the download section's choices.
-    this.engine = null;
+    this.engine = { status: 'checking' };
+    this.needsCheck = true;     // look again when the tab is next shown
     this.downloadLang = null;
     this.downloadKey = null;
     this.downloading = null;    // { key, text }
@@ -665,9 +673,9 @@ class ReadAloudSettingTab extends PluginSettingTab {
    * was known stays on screen meanwhile, unless `fresh`.
    */
   async check(fresh) {
-    if (fresh || !this.engine || this.engine.status !== 'ok') {
+    if (fresh || this.engine.status !== 'ok') {
       this.engine = { status: 'checking' };
-      this.render();
+      this.update();
     }
     let engine;
     try {
@@ -677,11 +685,13 @@ class ReadAloudSettingTab extends PluginSettingTab {
       engine = { status: 'error', error: err.message };
     }
     this.engine = engine;
-    this.render();
+    this.update();
   }
 
   hide() {
     this.plugin.stopTest();
+    this.needsCheck = true;
+    super.hide();
   }
 
   /** Starts the speech server anew, e.g. after calibre was installed. */
@@ -689,46 +699,132 @@ class ReadAloudSettingTab extends PluginSettingTab {
     this.plugin.stop();
     this.plugin.piper.stop();
     this.plugin.forgetCalibre();
-    this.autoCalibre = undefined;
     this.check(true);
   }
 
-  /** Obsidian opens the tab: look again, voices may have come or gone. */
-  display() {
-    this.check();
-  }
-
-  render() {
-    const { containerEl } = this;
-    const scroll = containerEl.scrollTop;
-    containerEl.empty();
-
-    new Setting(containerEl)
-      .setName('User guide')
-      .setDesc('Setting up calibre and voices on Windows, macOS and Linux, and how to use the plugin.')
-      .addButton((b) => b
-        .setButtonText('Open help')
-        .onClick(() => new HelpModal(this.app, this.plugin).open()));
-
-    this.engineSection(containerEl);
-    if (this.engine.status === 'ok') {
-      this.voiceSection(containerEl);
-      this.downloadSection(containerEl);
+  getControlValue(key) {
+    if (key === 'voice' && this.engine.status === 'ok') {
+      return voices.chooseVoice(this.engine.voices, this.plugin.settings.voice, userLocales()) || '';
     }
-    this.readingSection(containerEl);
-    this.advancedSection(containerEl);
-    containerEl.scrollTop = scroll;
+    return super.getControlValue(key);
   }
 
-  engineSection(containerEl) {
-    new Setting(containerEl).setName('Speech engine').setHeading();
+  async setControlValue(key, value) {
+    this.plugin.settings[key] = typeof value === 'string' ? value.trim() : value;
+    await this.plugin.saveSettings();
+    if (key === 'voice') this.plugin.voiceChanged();
+    if (key === 'calibreDebug') this.plugin.forgetCalibre();
+  }
+
+  getSettingDefinitions() {
+    return [
+      {
+        name: 'User guide',
+        desc: 'Setting up calibre and voices on Windows, macOS and Linux, and how to use the plugin.',
+        aliases: ['help', 'install'],
+        render: (setting) => {
+          setting.addButton((b) => b
+            .setButtonText('Open help')
+            .onClick(() => new HelpModal(this.app, this.plugin).open()));
+        },
+      },
+      {
+        type: 'group',
+        heading: 'Speech engine',
+        items: [{
+          name: 'calibre with Piper',
+          desc: 'Read Aloud speaks with the Piper built into calibre 8.8 or newer.',
+          aliases: ['calibre', 'engine', 'status'],
+          render: (setting) => this.renderEngine(setting),
+        }],
+      },
+      {
+        type: 'group',
+        heading: 'Voice',
+        items: this.voiceItems(),
+      },
+      {
+        type: 'group',
+        heading: 'Download voices',
+        items: this.engine.status !== 'ok' ? [this.waitingItem('Voice to download')] : [
+          {
+            name: 'Language',
+            desc: 'Voices in 58 languages, from the Piper project (huggingface.co/rhasspy/piper-voices).',
+            aliases: ['download', 'voices'],
+            render: (setting) => this.renderLanguage(setting),
+          },
+          {
+            name: 'Voice to download',
+            desc: 'Most voices are 20–120 MB. "medium" is a good balance of quality and speed.',
+            aliases: ['download'],
+            render: (setting) => this.renderDownload(setting),
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Reading',
+        items: [
+          {
+            name: 'Longest piece spoken at once (characters)',
+            desc: 'Notes are read sentence by sentence; a sentence longer than this is cut at commas.',
+            control: { type: 'slider', key: 'maxLength', min: 120, max: 800, step: 20, defaultValue: 300 },
+          },
+          {
+            name: 'Pause between paragraphs (seconds)',
+            control: {
+              type: 'slider', key: 'paragraphPause', min: 0, max: 2, step: 0.1, defaultValue: 0.5,
+              displayFormat: (v) => `${v.toFixed(1)} s`,
+            },
+          },
+          {
+            name: 'Scroll along',
+            desc: 'Keep the sentence being read in view.',
+            control: { type: 'toggle', key: 'follow', defaultValue: true },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Advanced',
+        items: [
+          {
+            name: 'Path of calibre-debug',
+            desc: 'Leave empty to find calibre automatically. Needed only for calibre in an unusual place, '
+              + 'such as the portable version on Windows. A folder (Calibre2, calibre.app) is fine too.',
+            control: {
+              type: 'text', key: 'calibreDebug', placeholder: 'Found automatically',
+              validate: (value) => validCalibrePath(value),
+            },
+          },
+          {
+            name: 'Voices folder',
+            desc: 'Leave empty to share the voices with calibre\'s e-book viewer. Voices from elsewhere '
+              + '(an .onnx file with its .onnx.json) can be put in this folder too. Click "Check again" '
+              + 'above after changing it.',
+            control: { type: 'text', key: 'voicesDir', placeholder: 'calibre\'s voices folder' },
+          },
+        ],
+      },
+    ];
+  }
+
+  renderEngine(setting) {
+    // Rendered only while the tab is shown: the moment to look again.
+    if (this.needsCheck) {
+      this.needsCheck = false;
+      window.setTimeout(() => this.check(), 0);
+    }
     const e = this.engine;
-    const setting = new Setting(containerEl).setName('calibre with Piper');
     if (e.status === 'checking') {
       setting.setDesc('Looking for calibre…');
     } else if (e.status === 'ok') {
       const where = this.plugin.calibre();
-      setting.setDesc(`✓ calibre ${e.info.calibre} found: ${where ? where.label : ''}`);
+      setting.setDesc(createFragment((f) => {
+        f.appendText(`✓ calibre ${e.info.calibre} found: ${where ? where.label : ''}`);
+        f.createEl('br');
+        f.appendText(`Voices folder: ${e.dir}`);
+      }));
     } else {
       setting.setDesc(createFragment((f) => {
         f.createSpan({ cls: 'readaloud-error', text: `✗ ${e.error}` });
@@ -741,57 +837,56 @@ class ReadAloudSettingTab extends PluginSettingTab {
     setting.addButton((b) => b
       .setButtonText('Check again')
       .setDisabled(e.status === 'checking')
-      .onClick(() => {
-        this.restartEngine();
-      }));
+      .onClick(() => this.restartEngine()));
   }
 
-  voiceSection(containerEl) {
-    const settings = this.plugin.settings;
-    new Setting(containerEl).setName('Voice').setHeading();
+  /** A row standing in for what needs calibre, until it is found. */
+  waitingItem(name) {
+    return {
+      name,
+      desc: this.engine.status === 'checking' ? 'Looking for calibre…' : 'Available once calibre is found.',
+      aliases: ['voice', 'download'],
+    };
+  }
+
+  voiceItems() {
+    const speed = {
+      name: 'Speed',
+      desc: 'At 1, the voice keeps its own pace. Changing the speed reloads the voice (a few seconds).',
+      control: {
+        type: 'slider', key: 'speed', min: 0.6, max: 2, step: 0.05, defaultValue: 1,
+        displayFormat: (v) => `${v.toFixed(2)}×`,
+      },
+    };
+    if (this.engine.status !== 'ok') return [this.waitingItem('Voice'), speed];
     const installed = this.engine.voices.filter((v) => v.installed).sort(voices.byLanguageThenName);
-    const current = voices.chooseVoice(this.engine.voices, settings.voice, userLocales());
-
-    const setting = new Setting(containerEl).setName('Voice');
     if (!installed.length) {
-      setting.setDesc('No voice is installed yet. Download one below.');
-      return;
+      return [{ name: 'Voice', desc: 'No voice is installed yet. Download one below.' }, speed];
     }
-    setting
-      .setDesc('The voice that reads your notes.')
-      .addDropdown((dd) => {
-        for (const v of installed) dd.addOption(v.key, voices.voiceLabel(v));
-        dd.setValue(current);
-        dd.onChange(async (value) => {
-          settings.voice = value;
-          await this.plugin.saveSettings();
-          this.plugin.voiceChanged();
-        });
-      })
-      .addExtraButton((b) => b
-        .setIcon('play')
-        .setTooltip('Listen to this voice')
-        .onClick(() => {
-          const key = settings.voice && installed.some((v) => v.key === settings.voice) ? settings.voice : current;
-          this.plugin.testVoice(installed.find((v) => v.key === key))
-            .catch((err) => new Notice('Read Aloud: ' + err.message));
-        }));
-
-    new Setting(containerEl)
-      .setName('Speed')
-      .setDesc('At 1, the voice keeps its own pace. Changing the speed reloads the voice (a few seconds).')
-      .addSlider((sl) => sl
-        .setLimits(0.6, 2, 0.05)
-        .setValue(settings.speed)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          settings.speed = value;
-          await this.plugin.saveSettings();
-        }));
+    const options = {};
+    for (const v of installed) options[v.key] = voices.voiceLabel(v);
+    return [
+      {
+        name: 'Voice',
+        desc: 'The voice that reads your notes.',
+        control: { type: 'dropdown', key: 'voice', options },
+      },
+      {
+        name: 'Listen to this voice',
+        desc: 'Reads a sample sentence with the voice chosen above.',
+        aliases: ['test', 'sample', 'try'],
+        action: () => {
+          const key = this.getControlValue('voice');
+          const voice = installed.find((v) => v.key === key);
+          if (voice) this.plugin.testVoice(voice).catch((err) => new Notice('Read Aloud: ' + err.message));
+        },
+      },
+      speed,
+    ];
   }
 
-  downloadSection(containerEl) {
-    new Setting(containerEl).setName('Download voices').setHeading();
+  /** The voices of the language chosen for download, and that language. */
+  downloadChoices() {
     const all = this.engine.voices.filter((v) => v.lang);
     const langs = voices.languages(all);
     if (!this.downloadLang || !langs.some((l) => l.lang === this.downloadLang)) {
@@ -801,35 +896,37 @@ class ReadAloudSettingTab extends PluginSettingTab {
     if (!inLang.some((v) => v.key === this.downloadKey)) {
       this.downloadKey = (inLang.find((v) => !v.installed) || inLang[0] || {}).key;
     }
+    return { langs, inLang };
+  }
 
-    new Setting(containerEl)
-      .setName('Language')
-      .setDesc(`${langs.length} languages, from the voices of the Piper project (huggingface.co/rhasspy/piper-voices).`)
-      .addDropdown((dd) => {
-        for (const l of langs) dd.addOption(l.lang, l.label);
-        dd.setValue(this.downloadLang);
-        dd.onChange((value) => {
-          this.downloadLang = value;
-          this.downloadKey = null;
-          this.render();
-        });
+  renderLanguage(setting) {
+    const { langs } = this.downloadChoices();
+    setting.addDropdown((dd) => {
+      for (const l of langs) dd.addOption(l.lang, l.label);
+      dd.setValue(this.downloadLang);
+      dd.onChange((value) => {
+        this.downloadLang = value;
+        this.downloadKey = null;
+        this.update();
       });
+    });
+  }
 
+  renderDownload(setting) {
+    const { inLang } = this.downloadChoices();
     const chosen = inLang.find((v) => v.key === this.downloadKey);
     const busy = this.downloading;
-    const setting = new Setting(containerEl)
-      .setName('Voice to download')
-      .setDesc(busy ? busy.text : (chosen && chosen.installed ? '✓ Installed.'
-        : 'Most voices are 20–120 MB. "medium" is a good balance of quality and speed.'))
-      .addDropdown((dd) => {
-        for (const v of inLang) dd.addOption(v.key, voices.voiceName(v) + (v.installed ? ' ✓' : ''));
-        if (this.downloadKey) dd.setValue(this.downloadKey);
-        dd.onChange((value) => {
-          this.downloadKey = value;
-          this.render();
-        });
+    if (busy) setting.setDesc(busy.text);
+    else if (chosen && chosen.installed) setting.setDesc('This voice is installed.');
+    this.progressEl = busy ? setting.descEl : null;
+    setting.addDropdown((dd) => {
+      for (const v of inLang) dd.addOption(v.key, voices.voiceName(v) + (v.installed ? ' ✓' : ''));
+      if (this.downloadKey) dd.setValue(this.downloadKey);
+      dd.onChange((value) => {
+        this.downloadKey = value;
+        this.update();
       });
-    if (busy) setting.descEl.addClass('readaloud-download-progress');
+    });
     setting.addButton((b) => {
       b.setButtonText(chosen && chosen.installed ? 'Download again' : 'Download')
         .setDisabled(!chosen || !!busy)
@@ -842,16 +939,14 @@ class ReadAloudSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     const mb = (n) => (n / 1048576).toFixed(0);
     this.downloading = { key: voice.key, text: 'Starting the download…' };
-    this.render();
+    this.update();
     try {
       await this.plugin.startPiper();    // it stops after 10 idle minutes
       await this.plugin.piper.download(voice.key, settings.voicesDir, (done, total) => {
         this.downloading.text = total
           ? `Downloading… ${Math.floor((100 * done) / total)}% of ${mb(total)} MB`
           : `Downloading… ${mb(done)} MB`;
-        const desc = this.containerEl.querySelector('.readaloud-download-progress');
-        if (desc) desc.setText(this.downloading.text);
-        else this.render();
+        if (this.progressEl && this.progressEl.isConnected) this.progressEl.setText(this.downloading.text);
       });
       settings.voice = voice.key;   // a voice just downloaded is the one wanted
       await this.plugin.saveSettings();
@@ -863,86 +958,13 @@ class ReadAloudSettingTab extends PluginSettingTab {
     this.downloading = null;
     await this.check();
   }
+}
 
-  readingSection(containerEl) {
-    const settings = this.plugin.settings;
-    new Setting(containerEl).setName('Reading').setHeading();
-
-    new Setting(containerEl)
-      .setName('Longest piece spoken at once (characters)')
-      .setDesc('Notes are read sentence by sentence; a sentence longer than this is cut at commas.')
-      .addSlider((sl) => sl
-        .setLimits(120, 800, 20)
-        .setValue(settings.maxLength)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          settings.maxLength = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('Pause between paragraphs (seconds)')
-      .addSlider((sl) => sl
-        .setLimits(0, 2, 0.1)
-        .setValue(settings.paragraphPause)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          settings.paragraphPause = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('Scroll along')
-      .setDesc('Keep the highlighted paragraph in view.')
-      .addToggle((t) => t
-        .setValue(settings.follow)
-        .onChange(async (value) => {
-          settings.follow = value;
-          await this.plugin.saveSettings();
-        }));
-  }
-
-  advancedSection(containerEl) {
-    const settings = this.plugin.settings;
-    new Setting(containerEl).setName('Advanced').setHeading();
-
-    if (this.autoCalibre === undefined) this.autoCalibre = findCalibre('');
-    const found = this.autoCalibre;
-    new Setting(containerEl)
-      .setName('Path of calibre-debug')
-      .setDesc('Leave empty to find calibre automatically. Needed only for calibre in an unusual place, '
-        + 'such as the portable version on Windows.')
-      .addText((t) => t
-        .setPlaceholder(found ? found.label : 'calibre not found')
-        .setValue(settings.calibreDebug)
-        .onChange(async (value) => {
-          settings.calibreDebug = value.trim();
-          this.plugin.forgetCalibre();
-          await this.plugin.saveSettings();
-        }))
-      .addExtraButton((b) => b
-        .setIcon('refresh-cw')
-        .setTooltip('Check again')
-        .onClick(() => {
-          this.restartEngine();
-        }));
-
-    new Setting(containerEl)
-      .setName('Voices folder')
-      .setDesc('Leave empty to share the voices with calibre\'s e-book viewer. Voices from elsewhere '
-        + '(an .onnx file with its .onnx.json) can be put in this folder too.')
-      .addText((t) => t
-        .setPlaceholder((this.engine && this.engine.info && this.engine.info.voicesDir) || 'calibre\'s folder')
-        .setValue(settings.voicesDir)
-        .onChange(async (value) => {
-          settings.voicesDir = value.trim();
-          await this.plugin.saveSettings();
-        }))
-      .addExtraButton((b) => b
-        .setIcon('refresh-cw')
-        .setTooltip('Look for voices again')
-        .onClick(() => this.check(true)));
-  }
+/** For the calibre-debug setting: an error message, or nothing if it is fine. */
+function validCalibrePath(value) {
+  if (!value || !value.trim() || process.env.FLATPAK_ID) return;
+  const found = findCalibre(value);
+  if (!fs.existsSync(found.file)) return `There is no ${found.file}.`;
 }
 
 class HelpModal extends Modal {
@@ -966,3 +988,4 @@ class HelpModal extends Modal {
 }
 
 export default ReadAloudPlugin;
+export { ReadAloudSettingTab, DEFAULT_SETTINGS };
