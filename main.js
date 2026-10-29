@@ -831,299 +831,299 @@ function readingRange(view) {
 }
 
 // HELP.md
-var HELP_default = '# Read Aloud \u2013 user guide\r\n\r\nRead Aloud reads the open note aloud, sentence by sentence, and softly\r\nhighlights the sentence being read. The voice is **Piper**, a neural text-to-speech\r\nengine that runs on your own computer: no internet connection is needed\r\nwhile reading, and your notes never leave your computer.\r\n\r\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\r\ntablets), with **Obsidian 1.13.1 or newer** (Settings \u2192 About shows your\r\nversion; update it there if needed). Setting it up takes three steps:\r\n\r\n1. Install calibre, which brings Piper with it.\r\n2. Install the plugin in your vault.\r\n3. Download a voice in the plugin\'s settings.\r\n\r\n## Why calibre?\r\n\r\nPiper exists for Windows, macOS and Linux as a program of its own too, but\r\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\r\n(calibre-ebook.com). calibre has a one-click installer on every system,\r\nkeeps Piper up to date, and knows where to download voices from, in 58\r\nlanguages. You don\'t have to use calibre itself for anything; it only has\r\nto be installed. If you already listen to books with calibre\'s e-book\r\nviewer, Read Aloud uses the same voices.\r\n\r\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\r\nbest.\r\n\r\n## 1. Install calibre\r\n\r\n### Windows\r\n\r\n1. Go to calibre-ebook.com/download_windows and download the installer\r\n   (*calibre 64bit*).\r\n2. Run it and click through with the default settings. calibre goes to\r\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\r\n\r\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\r\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\r\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\r\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\r\n\r\n### macOS\r\n\r\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\r\n2. Open it and drag **calibre** into **Applications**.\r\n3. Start calibre once from Applications, so macOS lets it run. After that\r\n   you can close it.\r\n\r\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\r\nhome folder).\r\n\r\n### Linux\r\n\r\nMost distributions\' own calibre packages are **too old** (Debian 13 and\r\nUbuntu 24.04, for example, have calibre versions without the built-in\r\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\r\nmore, you are done. Otherwise use one of these:\r\n\r\n**Official installer (recommended).** In a terminal:\r\n\r\n```bash\r\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\r\n```\r\n\r\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\r\nIf it complains about missing libraries, install them first; on\r\nDebian/Ubuntu:\r\n\r\n```bash\r\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\r\n```\r\n\r\nWithout admin rights, calibre can go into your home folder instead:\r\n\r\n```bash\r\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\r\n```\r\n\r\n**Flatpak** (from Flathub):\r\n\r\n```bash\r\nflatpak install flathub com.calibre_ebook.calibre\r\n```\r\n\r\nRead Aloud finds calibre in any of these places by itself.\r\n\r\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\r\nprograms outside it unless you allow it. Allow it once with:\r\n\r\n```bash\r\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\r\n```\r\n\r\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\r\nnone of this.)\r\n\r\n## 2. Install the plugin\r\n\r\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\r\nby hand:\r\n\r\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\r\n   (create `plugins` if it is not there). Hidden folders are shown with\r\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\r\n   on Windows, `.obsidian` is visible as it is.\r\n2. In it, create a folder named `read-aloud`.\r\n3. Put these three files from the plugin\'s GitHub page\r\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\r\n   `main.js`, `manifest.json` and `styles.css`.\r\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\r\n   off, turn them on ("Turn on community plugins"). Click the refresh\r\n   button next to *Installed plugins*, then turn on **Read Aloud**.\r\n\r\nTo update the plugin later, replace the three files, then turn Read Aloud\r\noff and on again (or restart Obsidian).\r\n\r\n## 3. Download a voice\r\n\r\nOpen **Settings \u2192 Read Aloud**.\r\n\r\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\r\n   was found. If it shows \u2717, see Troubleshooting.\r\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\r\n   language of your system first.\r\n3. Choose a **voice to download** and click **Download**. Voices are\r\n   20\u2013120 MB; the progress is shown under the voice.\r\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\r\n     a bit better but is slower; *low* and *x low* are the smallest.\r\n   - A \u2713 after a name means that voice is already installed.\r\n4. The voice just downloaded becomes the one that reads. Click **Listen\r\n   to this voice** to hear it.\r\n\r\nYou can download as many voices as you like and switch between them under\r\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\r\ne-book viewer can use them too, and they need downloading only once per\r\ncomputer.\r\n\r\n## Reading\r\n\r\n### Starting\r\n\r\n- **Speaker icon** in the left ribbon: starts at the cursor.\r\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\r\n  sentence you clicked.\r\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\r\n  - *Read Aloud: Read from the cursor*\r\n  - *Read Aloud: Read note from the start*\r\n\r\nIn reading view, reading starts at the top of the screen.\r\n\r\nThe first start takes a few seconds while calibre starts and the voice\r\nloads; meanwhile the status bar shows "Starting\u2026". After that, reading\r\nstarts almost immediately, and the next sentence is prepared while the\r\ncurrent one is read, so there are no waits between them.\r\n\r\n### Controls while reading\r\n\r\nWhile reading, the controls appear in the status bar at the bottom right:\r\n\r\n| Button | What it does |\r\n|---|---|\r\n| \u2039 | Back one sentence (or, more than two seconds into a sentence, to its start) |\r\n| \u23F8 / \u25B6 | Pause / resume |\r\n| \u203A | Forward one sentence |\r\n| \u23F9 | Stop |\r\n\r\nThe speaker icon in the ribbon also pauses and resumes.\r\n\r\nThese are commands too, and you can give them hotkeys under\r\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\r\n\r\n- *Pause / resume*\r\n- *Stop reading*\r\n- *Next sentence* / *Previous sentence*\r\n- *Next paragraph* / *Previous paragraph* \u2013 skips to the start of the next\r\n  paragraph, or back to the start of the previous one\r\n\r\nTip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next and\r\nprevious sentence, and Ctrl+Alt+\u2193 / Ctrl+Alt+\u2191 for next and previous\r\nparagraph work well.\r\n\r\n### What is read, and what is not\r\n\r\nParagraphs, headings, list items, quotes and table rows are read, sentence\r\nby sentence. An unusually long sentence is cut at commas (at 300\r\ncharacters by default), so reading never slows down.\r\n\r\nLeft out:\r\n\r\n- the properties at the top of the note (front matter),\r\n- code blocks, math and `%% comments %%`,\r\n- embedded images and notes,\r\n- link addresses (the link text is read),\r\n- Markdown syntax (`**`, `#`, `-` and so on).\r\n\r\n### Editing while reading\r\n\r\nYou can keep typing in the note while it is read: the highlight and the\r\nreading position move along with your edits.\r\n\r\nIn reading view, the sentence is highlighted in the rendered text too. Opening another note in the\r\nsame tab stops reading.\r\n\r\n## Settings\r\n\r\nAll of these can also be found with the search box at the top of\r\nObsidian\'s settings.\r\n\r\n**Speech engine**\r\n\r\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\r\n  *Check again* looks again, e.g. after installing or updating calibre.\r\n\r\n**Voice**\r\n\r\n- **Voice** \u2013 the installed voice that reads.\r\n- **Listen to this voice** \u2013 click it to hear a sample sentence.\r\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\r\n  the voice, which causes a short pause.\r\n\r\n**Download voices** \u2013 see step 3.\r\n\r\n**Reading**\r\n\r\n- **Longest piece spoken at once** \u2013 a sentence longer than this many\r\n  characters is cut at commas.\r\n- **Pause between paragraphs** \u2013 in seconds; sentences within a paragraph\r\n  follow each other with Piper\'s own short pause.\r\n- **Scroll along** \u2013 keeps the sentence being read on screen.\r\n\r\n**Advanced** \u2013 both can be left empty:\r\n\r\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\r\n  portable version on Windows.\r\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\r\n  folder, which is shown under *Speech engine*. Piper voices from\r\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\r\n  copied into this folder too; they then appear under **Voice**.\r\n\r\n## Troubleshooting\r\n\r\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\r\nplace. Install it as in step 1, then click *Check\r\nagain* in the settings. For portable or unusual installs, enter the path of\r\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\r\n\r\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\r\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\r\ncause: use the official installer or Flatpak instead (see\r\nLinux).\r\n\r\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\r\n\r\n**The download fails** \u2013 it needs an internet connection to\r\nhuggingface.co. A firewall or proxy may block it. You can also download a\r\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\r\nand the `.onnx.json` file) and copy them into the voices folder.\r\n\r\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\r\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\r\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\r\nthe note at the end of Linux.\r\n\r\n**No sound** \u2013 check that the system volume is not muted and that the right\r\noutput device is selected; try *Listen to this voice* in the settings.\r\n\r\n**The first paragraph takes long** \u2013 only the very first start after\r\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\r\nmemory it used) needs a few seconds to load the voice.\r\n';
+var HELP_default = '# Read Aloud \u2013 user guide\n\nRead Aloud reads the open note aloud, sentence by sentence, and softly\nhighlights the sentence being read. The voice is **Piper**, a neural text-to-speech\nengine that runs on your own computer: no internet connection is needed\nwhile reading, and your notes never leave your computer.\n\nRead Aloud works on **Windows, macOS and Linux** desktops (not on phones or\ntablets), with **Obsidian 1.13.1 or newer** (Settings \u2192 About shows your\nversion; update it there if needed). Setting it up takes three steps:\n\n1. Install calibre, which brings Piper with it.\n2. Install the plugin in your vault.\n3. Download a voice in the plugin\'s settings.\n\n## Why calibre?\n\nPiper exists for Windows, macOS and Linux as a program of its own too, but\nRead Aloud uses the Piper built into **calibre**, the free e-book manager\n(calibre-ebook.com). calibre has a one-click installer on every system,\nkeeps Piper up to date, and knows where to download voices from, in 58\nlanguages. You don\'t have to use calibre itself for anything; it only has\nto be installed. If you already listen to books with calibre\'s e-book\nviewer, Read Aloud uses the same voices.\n\n**calibre 8.8 or newer** is needed (from August 2025); the newest version is\nbest.\n\n## 1. Install calibre\n\n### Windows\n\n1. Go to calibre-ebook.com/download_windows and download the installer\n   (*calibre 64bit*).\n2. Run it and click through with the default settings. calibre goes to\n   `C:\\Program Files\\Calibre2`, where Read Aloud finds it by itself.\n\n**Portable calibre** (e.g. on a USB drive or without admin rights) works\ntoo, but Read Aloud cannot find it by itself: enter the full path of its\n`calibre-debug.exe` in the settings, under *Advanced \u2192 Path of\ncalibre-debug*, e.g. `D:\\Calibre Portable\\Calibre\\calibre-debug.exe`.\n\n### macOS\n\n1. Go to calibre-ebook.com/download_osx and download the `.dmg` file.\n2. Open it and drag **calibre** into **Applications**.\n3. Start calibre once from Applications, so macOS lets it run. After that\n   you can close it.\n\nRead Aloud finds calibre in `/Applications` (or in `Applications` in your\nhome folder).\n\n### Linux\n\nMost distributions\' own calibre packages are **too old** (Debian 13 and\nUbuntu 24.04, for example, have calibre versions without the built-in\nPiper). Check with `calibre --version` in a terminal: if it says 8.8 or\nmore, you are done. Otherwise use one of these:\n\n**Official installer (recommended).** In a terminal:\n\n```bash\nsudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin\n```\n\nThis puts calibre in `/opt/calibre`, and running it again later updates it.\nIf it complains about missing libraries, install them first; on\nDebian/Ubuntu:\n\n```bash\nsudo apt install wget xz-utils xdg-utils libegl1 libopengl0 libxcb-cursor0\n```\n\nWithout admin rights, calibre can go into your home folder instead:\n\n```bash\nwget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=~/calibre-bin isolated=y\n```\n\n**Flatpak** (from Flathub):\n\n```bash\nflatpak install flathub com.calibre_ebook.calibre\n```\n\nRead Aloud finds calibre in any of these places by itself.\n\n**If Obsidian itself is a Flatpak:** Obsidian\'s sandbox cannot start\nprograms outside it unless you allow it. Allow it once with:\n\n```bash\nflatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian\n```\n\nThen restart Obsidian. (The AppImage or `.deb` version of Obsidian needs\nnone of this.)\n\n## 2. Install the plugin\n\nRead Aloud is not in Obsidian\'s community plugin list, so it is installed\nby hand:\n\n1. In your vault, open the hidden `.obsidian` folder, then `plugins` in it\n   (create `plugins` if it is not there). Hidden folders are shown with\n   Ctrl+H in most Linux file managers and Cmd+Shift+. in the macOS Finder;\n   on Windows, `.obsidian` is visible as it is.\n2. In it, create a folder named `read-aloud`.\n3. Put these three files from the plugin\'s GitHub page\n   (github.com/laszlorepassy/obsidian-read-aloud) into that folder:\n   `main.js`, `manifest.json` and `styles.css`.\n4. In Obsidian: **Settings \u2192 Community plugins**. If community plugins are\n   off, turn them on ("Turn on community plugins"). Click the refresh\n   button next to *Installed plugins*, then turn on **Read Aloud**.\n\nTo update the plugin later, replace the three files, then turn Read Aloud\noff and on again (or restart Obsidian).\n\n## 3. Download a voice\n\nOpen **Settings \u2192 Read Aloud**.\n\n1. Under **Speech engine**, a \u2713 with calibre\'s version shows that calibre\n   was found. If it shows \u2717, see Troubleshooting.\n2. Under **Download voices**, choose a **language**. Read Aloud offers the\n   language of your system first.\n3. Choose a **voice to download** and click **Download**. Voices are\n   20\u2013120 MB; the progress is shown under the voice.\n   - Quality: *medium* is a good balance of sound and speed; *high* sounds\n     a bit better but is slower; *low* and *x low* are the smallest.\n   - A \u2713 after a name means that voice is already installed.\n4. The voice just downloaded becomes the one that reads. Click **Listen\n   to this voice** to hear it.\n\nYou can download as many voices as you like and switch between them under\n**Voice**. The voices are stored in calibre\'s own folder, so calibre\'s\ne-book viewer can use them too, and they need downloading only once per\ncomputer.\n\n## Reading\n\n### Starting\n\n- **Speaker icon** in the left ribbon: starts at the cursor.\n- **Right-click** in the text \u2192 **Read aloud from here**: starts at the\n  sentence you clicked.\n- **Command palette** (Ctrl+P, Cmd+P on a Mac):\n  - *Read Aloud: Read from the cursor*\n  - *Read Aloud: Read note from the start*\n\nIn reading view, reading starts at the top of the screen.\n\nThe first start takes a few seconds while calibre starts and the voice\nloads; meanwhile the status bar shows "Starting\u2026". After that, reading\nstarts almost immediately, and the next sentence is prepared while the\ncurrent one is read, so there are no waits between them.\n\n### Controls while reading\n\nWhile reading, the controls appear in the status bar at the bottom right:\n\n| Button | What it does |\n|---|---|\n| \u2039 | Back one sentence (or, more than two seconds into a sentence, to its start) |\n| \u23F8 / \u25B6 | Pause / resume |\n| \u203A | Forward one sentence |\n| \u23F9 | Stop |\n\nThe speaker icon in the ribbon also pauses and resumes.\n\nThese are commands too, and you can give them hotkeys under\n**Settings \u2192 Hotkeys** (search for "Read Aloud"):\n\n- *Pause / resume*\n- *Stop reading*\n- *Next sentence* / *Previous sentence*\n- *Next paragraph* / *Previous paragraph* \u2013 skips to the start of the next\n  paragraph, or back to the start of the previous one\n\nTip: Ctrl+Alt+Space for pause/resume, Ctrl+Alt+\u2192 / Ctrl+Alt+\u2190 for next and\nprevious sentence, and Ctrl+Alt+\u2193 / Ctrl+Alt+\u2191 for next and previous\nparagraph work well.\n\n### What is read, and what is not\n\nParagraphs, headings, list items, quotes and table rows are read, sentence\nby sentence. An unusually long sentence is cut at commas (at 300\ncharacters by default), so reading never slows down.\n\nLeft out:\n\n- the properties at the top of the note (front matter),\n- code blocks, math and `%% comments %%`,\n- embedded images and notes,\n- link addresses (the link text is read),\n- Markdown syntax (`**`, `#`, `-` and so on).\n\n### Editing while reading\n\nYou can keep typing in the note while it is read: the highlight and the\nreading position move along with your edits.\n\nIn reading view, the sentence is highlighted in the rendered text too. Opening another note in the\nsame tab stops reading.\n\n## Settings\n\nAll of these can also be found with the search box at the top of\nObsidian\'s settings.\n\n**Speech engine**\n\n- **calibre with Piper** \u2013 whether calibre was found, and which version.\n  *Check again* looks again, e.g. after installing or updating calibre.\n\n**Voice**\n\n- **Voice** \u2013 the installed voice that reads.\n- **Listen to this voice** \u2013 click it to hear a sample sentence.\n- **Speed** \u2013 1 is the voice\'s own pace. Changing it while reading reloads\n  the voice, which causes a short pause.\n\n**Download voices** \u2013 see step 3.\n\n**Reading**\n\n- **Longest piece spoken at once** \u2013 a sentence longer than this many\n  characters is cut at commas.\n- **Pause between paragraphs** \u2013 in seconds; sentences within a paragraph\n  follow each other with Piper\'s own short pause.\n- **Scroll along** \u2013 keeps the sentence being read on screen.\n\n**Advanced** \u2013 both can be left empty:\n\n- **Path of calibre-debug** \u2013 for calibre in an unusual place, such as the\n  portable version on Windows.\n- **Voices folder** \u2013 where the voices are kept; empty means calibre\'s own\n  folder, which is shown under *Speech engine*. Piper voices from\n  anywhere else (an `.onnx` file together with its `.onnx.json`) can be\n  copied into this folder too; they then appear under **Voice**.\n\n## Troubleshooting\n\n**"calibre was not found"** \u2013 calibre is not installed, or not in its usual\nplace. Install it as in step 1, then click *Check\nagain* in the settings. For portable or unusual installs, enter the path of\n`calibre-debug` (`calibre-debug.exe` on Windows) under *Advanced*.\n\n**"calibre \u2026 has no built-in Piper; Read Aloud needs calibre 8.8 or\nnewer"** \u2013 update calibre. On Linux, a distribution package is usually the\ncause: use the official installer or Flatpak instead (see\nLinux).\n\n**"No voice is installed yet"** \u2013 download one under *Download voices*.\n\n**The download fails** \u2013 it needs an internet connection to\nhuggingface.co. A firewall or proxy may block it. You can also download a\nvoice by hand from huggingface.co/rhasspy/piper-voices (both the `.onnx`\nand the `.onnx.json` file) and copy them into the voices folder.\n\n**"Piper did not start"** or **"Piper stopped"** \u2013 the message shows\ncalibre\'s own error below. Try *Check again*; if it persists, reinstalling\nor updating calibre usually helps. On Linux with Obsidian as a Flatpak, see\nthe note at the end of Linux.\n\n**No sound** \u2013 check that the system volume is not muted and that the right\noutput device is selected; try *Listen to this voice* in the settings.\n\n**The first paragraph takes long** \u2013 only the very first start after\nopening Obsidian (or after 10 idle minutes, when Read Aloud frees the\nmemory it used) needs a few seconds to load the voice.\n';
 
 // src/piper_server.py
-var piper_server_default = `# -*- coding: utf-8 -*-\r
-"""\r
-Speech server for the Read Aloud plugin, run inside calibre's Python\r
-(calibre-debug -e piper_server.py), which has Piper built in since calibre\r
-8.8, on Windows, macOS and Linux alike.\r
-\r
-It keeps the voice loaded, so a paragraph only costs its synthesis time\r
-(about a quarter of its spoken length), not the seconds of loading the model.\r
-\r
-Requests arrive on stdin, one JSON object per line:\r
-    {"cmd": "voice", "model": "/path/voice.onnx", "speed": 1.0}\r
-    {"cmd": "speak", "id": 7, "text": "..."}\r
-    {"cmd": "cancel"}                   drop everything queued or being spoken\r
-    {"cmd": "catalog", "dir": "..."}    the voices calibre knows, and which\r
-                                        of them are in \`dir\` (default: calibre's)\r
-    {"cmd": "download", "key": "hu_HU-anna-medium", "dir": "..."}\r
-\r
-Everything goes back on stdout as one JSON header line followed by exactly\r
-"bytes" bytes of payload, which is only ever 16-bit mono PCM of a sentence:\r
-    {"id": 7, "rate": 22050, "bytes": 51200, "last": false}\\n<pcm>\r
-The other messages have no payload: {"ready": ...}, {"voice": ...},\r
-{"catalog": [...]}, {"download": key, ...} and {"error": ..., "id"?: ...}.\r
-"""\r
-\r
-import json\r
-import os\r
-import queue\r
-import re\r
-import sys\r
-import threading\r
-\r
-# About this share of Piper's speech does not follow its length scale, so\r
-# the length scale is stretched to make the whole come out at the asked speed.\r
-FIXED_SHARE = 0.3\r
-SENTENCE_PAUSE = 0.25\r
-QUALITIES = ("x_low", "low", "medium", "high")\r
-\r
-\r
-def private_stdout():\r
-    """\r
-    The frames get stdout to themselves: anything else printed there (by\r
-    calibre, Piper, espeak or onnxruntime, from Python or C) would land\r
-    between a header and its audio and garble both. fd 1 is duplicated for\r
-    the frames, and fd 1 itself then goes to stderr.\r
-    """\r
-    fd = os.dup(1)\r
-    if sys.platform == "win32":\r
-        import msvcrt\r
-        msvcrt.setmode(fd, os.O_BINARY)\r
-    os.dup2(2, 1)\r
-    sys.stdout = sys.stderr\r
-    return os.fdopen(fd, "wb")\r
-\r
-\r
-out = private_stdout()\r
-out_lock = threading.Lock()\r
-requests = queue.Queue()\r
-generation = 0          # bumped by every cancel; older speak requests are dropped\r
-\r
-\r
-def send(header, pcm=b""):\r
-    header["bytes"] = len(pcm)\r
-    with out_lock:\r
-        out.write(json.dumps(header).encode("utf-8") + b"\\n")\r
-        out.write(pcm)\r
-        out.flush()\r
-\r
-\r
-def read_stdin():\r
-    global generation\r
-    try:\r
-        for line in sys.stdin.buffer:\r
-            try:\r
-                req = json.loads(line)\r
-                cmd = req.get("cmd")\r
-                if cmd == "cancel":\r
-                    generation += 1\r
-                elif cmd == "catalog":\r
-                    send_catalog(req.get("dir"))\r
-                    continue\r
-                elif cmd == "download":\r
-                    threading.Thread(target=download,\r
-                                     args=(req["key"], req.get("dir")),\r
-                                     daemon=True).start()\r
-                    continue\r
-                req["generation"] = generation\r
-                requests.put(req)\r
-            except Exception as e:\r
-                send({"error": "Bad request: %s" % e})\r
-    finally:\r
-        requests.put(None)  # Obsidian went away, or reading failed\r
-\r
-\r
-def length_multiplier(speed):\r
-    scale = (1 / speed - FIXED_SHARE) / (1 - FIXED_SHARE)\r
-    return max(-1.0, min(0.9, 1 - scale))\r
-\r
-\r
-# ------------------------------------------------------------------ voices\r
-\r
-def default_voices_dir():\r
-    try:\r
-        from calibre.gui2.tts.piper import piper_cache_dir\r
-        return piper_cache_dir()\r
-    except Exception:\r
-        from calibre.constants import cache_dir\r
-        return os.path.join(cache_dir(), "piper-voices")\r
-\r
-\r
-def known_voices():\r
-    """{key: {lang, name, quality, model_url, config_url}} from calibre's list."""\r
-    from calibre.utils.resources import get_path\r
-    with open(get_path("piper-voices.json"), "rb") as f:\r
-        lang_map = json.load(f)["lang_map"]\r
-    voices = {}\r
-    for lang, names in lang_map.items():\r
-        for name, qualities in names.items():\r
-            for quality, urls in qualities.items():\r
-                key = "%s-%s-%s" % (lang, name, quality)\r
-                voices[key] = {"lang": lang, "name": name, "quality": quality,\r
-                               "model_url": urls["model"],\r
-                               "config_url": urls["config"]}\r
-    return voices\r
-\r
-\r
-def send_catalog(folder):\r
-    """Always answers, so a request never waits forever: on failure, with\r
-    an empty list and "catalogError"."""\r
-    try:\r
-        catalog, folder = make_catalog(folder)\r
-        send({"catalog": catalog, "dir": folder})\r
-    except Exception as e:\r
-        send({"catalog": [], "dir": folder or "",\r
-              "catalogError": "Could not list the voices: %s" % e})\r
-\r
-\r
-def make_catalog(folder):\r
-    folder = folder or default_voices_dir()\r
-    try:\r
-        voices = known_voices()\r
-    except Exception as e:\r
-        raise RuntimeError("could not read calibre's list of voices: %s" % e)\r
-    try:\r
-        files = set(os.listdir(folder))\r
-    except OSError:\r
-        files = set()\r
-    catalog = []\r
-    for key, v in voices.items():\r
-        catalog.append({"key": key, "lang": v["lang"], "name": v["name"],\r
-                        "quality": v["quality"],\r
-                        "installed": key + ".onnx" in files\r
-                        and key + ".onnx.json" in files})\r
-    # Voices put in the folder by hand, from anywhere.\r
-    for f in sorted(files):\r
-        key = f[:-5]\r
-        if f.endswith(".onnx") and key not in voices and key + ".onnx.json" in files:\r
-            m = re.match(r"^([a-z]{2,3}_[A-Z]{2})-(.+?)(?:-(%s))?$"\r
-                         % "|".join(QUALITIES), key)\r
-            catalog.append({"key": key, "lang": m.group(1) if m else "",\r
-                            "name": m.group(2) if m else key,\r
-                            "quality": (m.group(3) or "") if m else "",\r
-                            "installed": True})\r
-    return catalog, folder\r
-\r
-\r
-def open_url(url):\r
-    try:\r
-        # calibre's browser brings its own certificates on every platform.\r
-        from calibre import browser\r
-        return browser().open(url, timeout=60)\r
-    except ImportError:\r
-        import urllib.request\r
-        return urllib.request.urlopen(url, timeout=60)\r
-\r
-\r
-def fetch(url, path, report):\r
-    part = path + ".part"\r
-    r = open_url(url)\r
-    try:\r
-        total = int(r.info().get("Content-Length") or 0)\r
-        done = 0\r
-        with open(part, "wb") as f:\r
-            while True:\r
-                data = r.read(256 * 1024)\r
-                if not data:\r
-                    break\r
-                f.write(data)\r
-                done += len(data)\r
-                report(done, total)\r
-    finally:\r
-        r.close()\r
-    os.replace(part, path)\r
-\r
-\r
-def download(key, folder):\r
-    folder = folder or default_voices_dir()\r
-    try:\r
-        voice = known_voices().get(key)\r
-        if not voice:\r
-            raise ValueError("calibre does not know the voice %s" % key)\r
-        os.makedirs(folder, exist_ok=True)\r
-        model = os.path.join(folder, key + ".onnx")\r
-        fetch(voice["config_url"], model + ".json", lambda d, t: None)\r
-        last = [-1]\r
-\r
-        def report(done, total):\r
-            # Every percent, or every megabyte when the size is not known.\r
-            step = int(100 * done / total) if total else done // (1 << 20)\r
-            if step != last[0]:\r
-                last[0] = step\r
-                send({"download": key, "done": done, "total": total})\r
-        fetch(voice["model_url"], model, report)\r
-        send({"download": key, "finished": True})\r
-    except Exception as e:\r
-        send({"download": key, "error": str(e)})\r
-\r
-\r
-# ------------------------------------------------------------------ speech\r
-\r
-def main():\r
-    try:\r
-        from calibre.utils.tts import piper\r
-        import calibre_extensions.piper as engine\r
-    except ImportError:\r
-        from calibre.constants import __version__\r
-        send({"error": "calibre %s has no built-in Piper; Read Aloud needs "\r
-                       "calibre 8.8 or newer." % __version__, "fatal": True})\r
-        return\r
-    from calibre.constants import __version__\r
-\r
-    engine.initialize(piper.espeak_data_dir())\r
-    threading.Thread(target=read_stdin, daemon=True).start()\r
-    send({"ready": True, "calibre": __version__,\r
-          "voicesDir": default_voices_dir()})\r
-\r
-    loaded = None\r
-    while True:\r
-        req = requests.get()\r
-        if req is None:\r
-            return\r
-        cmd = req.get("cmd")\r
-        if cmd == "voice":\r
-            wanted = (req["model"], float(req.get("speed", 1.0)))\r
-            if wanted == loaded:\r
-                continue\r
-            try:\r
-                speed = max(0.5, min(3.0, wanted[1]))\r
-                piper.set_voice(wanted[0] + ".json", wanted[0],\r
-                                length_multiplier(speed),\r
-                                SENTENCE_PAUSE / speed)\r
-                loaded = wanted\r
-                send({"voice": os.path.basename(wanted[0])})\r
-            except Exception as e:\r
-                loaded = None\r
-                send({"error": "Could not load the voice %s: %s"\r
-                      % (wanted[0], e), "voiceFailed": True,\r
-                      "model": wanted[0]})\r
-        elif cmd == "speak":\r
-            speak(engine, req, loaded)\r
-\r
-\r
-def speak(engine, req, loaded):\r
-    rid = req["id"]\r
-    if req["generation"] != generation:\r
-        return\r
-    if loaded is None:\r
-        send({"id": rid, "error": "No voice is loaded."})\r
-        return\r
-    try:\r
-        engine.start(req["text"])\r
-        while True:\r
-            data, _, rate, last = engine.next(True)\r
-            if req["generation"] != generation:\r
-                # Cancelled: finish the utterance quietly so the engine is\r
-                # ready for the next one, but send nothing more.\r
-                while not last:\r
-                    _, _, _, last = engine.next(True)\r
-                return\r
-            send({"id": rid, "rate": rate, "last": bool(last)}, data)\r
-            if last:\r
-                return\r
-    except Exception as e:\r
-        send({"id": rid, "error": str(e)})\r
-\r
-\r
-if __name__ == "__main__":\r
-    try:\r
-        main()\r
-    except KeyboardInterrupt:\r
-        pass\r
+var piper_server_default = `# -*- coding: utf-8 -*-
+"""
+Speech server for the Read Aloud plugin, run inside calibre's Python
+(calibre-debug -e piper_server.py), which has Piper built in since calibre
+8.8, on Windows, macOS and Linux alike.
+
+It keeps the voice loaded, so a paragraph only costs its synthesis time
+(about a quarter of its spoken length), not the seconds of loading the model.
+
+Requests arrive on stdin, one JSON object per line:
+    {"cmd": "voice", "model": "/path/voice.onnx", "speed": 1.0}
+    {"cmd": "speak", "id": 7, "text": "..."}
+    {"cmd": "cancel"}                   drop everything queued or being spoken
+    {"cmd": "catalog", "dir": "..."}    the voices calibre knows, and which
+                                        of them are in \`dir\` (default: calibre's)
+    {"cmd": "download", "key": "hu_HU-anna-medium", "dir": "..."}
+
+Everything goes back on stdout as one JSON header line followed by exactly
+"bytes" bytes of payload, which is only ever 16-bit mono PCM of a sentence:
+    {"id": 7, "rate": 22050, "bytes": 51200, "last": false}\\n<pcm>
+The other messages have no payload: {"ready": ...}, {"voice": ...},
+{"catalog": [...]}, {"download": key, ...} and {"error": ..., "id"?: ...}.
+"""
+
+import json
+import os
+import queue
+import re
+import sys
+import threading
+
+# About this share of Piper's speech does not follow its length scale, so
+# the length scale is stretched to make the whole come out at the asked speed.
+FIXED_SHARE = 0.3
+SENTENCE_PAUSE = 0.25
+QUALITIES = ("x_low", "low", "medium", "high")
+
+
+def private_stdout():
+    """
+    The frames get stdout to themselves: anything else printed there (by
+    calibre, Piper, espeak or onnxruntime, from Python or C) would land
+    between a header and its audio and garble both. fd 1 is duplicated for
+    the frames, and fd 1 itself then goes to stderr.
+    """
+    fd = os.dup(1)
+    if sys.platform == "win32":
+        import msvcrt
+        msvcrt.setmode(fd, os.O_BINARY)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return os.fdopen(fd, "wb")
+
+
+out = private_stdout()
+out_lock = threading.Lock()
+requests = queue.Queue()
+generation = 0          # bumped by every cancel; older speak requests are dropped
+
+
+def send(header, pcm=b""):
+    header["bytes"] = len(pcm)
+    with out_lock:
+        out.write(json.dumps(header).encode("utf-8") + b"\\n")
+        out.write(pcm)
+        out.flush()
+
+
+def read_stdin():
+    global generation
+    try:
+        for line in sys.stdin.buffer:
+            try:
+                req = json.loads(line)
+                cmd = req.get("cmd")
+                if cmd == "cancel":
+                    generation += 1
+                elif cmd == "catalog":
+                    send_catalog(req.get("dir"))
+                    continue
+                elif cmd == "download":
+                    threading.Thread(target=download,
+                                     args=(req["key"], req.get("dir")),
+                                     daemon=True).start()
+                    continue
+                req["generation"] = generation
+                requests.put(req)
+            except Exception as e:
+                send({"error": "Bad request: %s" % e})
+    finally:
+        requests.put(None)  # Obsidian went away, or reading failed
+
+
+def length_multiplier(speed):
+    scale = (1 / speed - FIXED_SHARE) / (1 - FIXED_SHARE)
+    return max(-1.0, min(0.9, 1 - scale))
+
+
+# ------------------------------------------------------------------ voices
+
+def default_voices_dir():
+    try:
+        from calibre.gui2.tts.piper import piper_cache_dir
+        return piper_cache_dir()
+    except Exception:
+        from calibre.constants import cache_dir
+        return os.path.join(cache_dir(), "piper-voices")
+
+
+def known_voices():
+    """{key: {lang, name, quality, model_url, config_url}} from calibre's list."""
+    from calibre.utils.resources import get_path
+    with open(get_path("piper-voices.json"), "rb") as f:
+        lang_map = json.load(f)["lang_map"]
+    voices = {}
+    for lang, names in lang_map.items():
+        for name, qualities in names.items():
+            for quality, urls in qualities.items():
+                key = "%s-%s-%s" % (lang, name, quality)
+                voices[key] = {"lang": lang, "name": name, "quality": quality,
+                               "model_url": urls["model"],
+                               "config_url": urls["config"]}
+    return voices
+
+
+def send_catalog(folder):
+    """Always answers, so a request never waits forever: on failure, with
+    an empty list and "catalogError"."""
+    try:
+        catalog, folder = make_catalog(folder)
+        send({"catalog": catalog, "dir": folder})
+    except Exception as e:
+        send({"catalog": [], "dir": folder or "",
+              "catalogError": "Could not list the voices: %s" % e})
+
+
+def make_catalog(folder):
+    folder = folder or default_voices_dir()
+    try:
+        voices = known_voices()
+    except Exception as e:
+        raise RuntimeError("could not read calibre's list of voices: %s" % e)
+    try:
+        files = set(os.listdir(folder))
+    except OSError:
+        files = set()
+    catalog = []
+    for key, v in voices.items():
+        catalog.append({"key": key, "lang": v["lang"], "name": v["name"],
+                        "quality": v["quality"],
+                        "installed": key + ".onnx" in files
+                        and key + ".onnx.json" in files})
+    # Voices put in the folder by hand, from anywhere.
+    for f in sorted(files):
+        key = f[:-5]
+        if f.endswith(".onnx") and key not in voices and key + ".onnx.json" in files:
+            m = re.match(r"^([a-z]{2,3}_[A-Z]{2})-(.+?)(?:-(%s))?$"
+                         % "|".join(QUALITIES), key)
+            catalog.append({"key": key, "lang": m.group(1) if m else "",
+                            "name": m.group(2) if m else key,
+                            "quality": (m.group(3) or "") if m else "",
+                            "installed": True})
+    return catalog, folder
+
+
+def open_url(url):
+    try:
+        # calibre's browser brings its own certificates on every platform.
+        from calibre import browser
+        return browser().open(url, timeout=60)
+    except ImportError:
+        import urllib.request
+        return urllib.request.urlopen(url, timeout=60)
+
+
+def fetch(url, path, report):
+    part = path + ".part"
+    r = open_url(url)
+    try:
+        total = int(r.info().get("Content-Length") or 0)
+        done = 0
+        with open(part, "wb") as f:
+            while True:
+                data = r.read(256 * 1024)
+                if not data:
+                    break
+                f.write(data)
+                done += len(data)
+                report(done, total)
+    finally:
+        r.close()
+    os.replace(part, path)
+
+
+def download(key, folder):
+    folder = folder or default_voices_dir()
+    try:
+        voice = known_voices().get(key)
+        if not voice:
+            raise ValueError("calibre does not know the voice %s" % key)
+        os.makedirs(folder, exist_ok=True)
+        model = os.path.join(folder, key + ".onnx")
+        fetch(voice["config_url"], model + ".json", lambda d, t: None)
+        last = [-1]
+
+        def report(done, total):
+            # Every percent, or every megabyte when the size is not known.
+            step = int(100 * done / total) if total else done // (1 << 20)
+            if step != last[0]:
+                last[0] = step
+                send({"download": key, "done": done, "total": total})
+        fetch(voice["model_url"], model, report)
+        send({"download": key, "finished": True})
+    except Exception as e:
+        send({"download": key, "error": str(e)})
+
+
+# ------------------------------------------------------------------ speech
+
+def main():
+    try:
+        from calibre.utils.tts import piper
+        import calibre_extensions.piper as engine
+    except ImportError:
+        from calibre.constants import __version__
+        send({"error": "calibre %s has no built-in Piper; Read Aloud needs "
+                       "calibre 8.8 or newer." % __version__, "fatal": True})
+        return
+    from calibre.constants import __version__
+
+    engine.initialize(piper.espeak_data_dir())
+    threading.Thread(target=read_stdin, daemon=True).start()
+    send({"ready": True, "calibre": __version__,
+          "voicesDir": default_voices_dir()})
+
+    loaded = None
+    while True:
+        req = requests.get()
+        if req is None:
+            return
+        cmd = req.get("cmd")
+        if cmd == "voice":
+            wanted = (req["model"], float(req.get("speed", 1.0)))
+            if wanted == loaded:
+                continue
+            try:
+                speed = max(0.5, min(3.0, wanted[1]))
+                piper.set_voice(wanted[0] + ".json", wanted[0],
+                                length_multiplier(speed),
+                                SENTENCE_PAUSE / speed)
+                loaded = wanted
+                send({"voice": os.path.basename(wanted[0])})
+            except Exception as e:
+                loaded = None
+                send({"error": "Could not load the voice %s: %s"
+                      % (wanted[0], e), "voiceFailed": True,
+                      "model": wanted[0]})
+        elif cmd == "speak":
+            speak(engine, req, loaded)
+
+
+def speak(engine, req, loaded):
+    rid = req["id"]
+    if req["generation"] != generation:
+        return
+    if loaded is None:
+        send({"id": rid, "error": "No voice is loaded."})
+        return
+    try:
+        engine.start(req["text"])
+        while True:
+            data, _, rate, last = engine.next(True)
+            if req["generation"] != generation:
+                # Cancelled: finish the utterance quietly so the engine is
+                # ready for the next one, but send nothing more.
+                while not last:
+                    _, _, _, last = engine.next(True)
+                return
+            send({"id": rid, "rate": rate, "last": bool(last)}, data)
+            if last:
+                return
+    except Exception as e:
+        send({"id": rid, "error": str(e)})
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
 `;
 
 // src/main.ts
