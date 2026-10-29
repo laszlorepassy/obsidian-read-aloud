@@ -331,7 +331,7 @@ class ReadAloudPlugin extends Plugin {
     void this.startInView(view, 'cursor');
   }
 
-  async startInView(view: MarkdownView, where: 'cursor' | 'start'): Promise<void> {
+  async startInView(view: MarkdownView, where: 'cursor' | 'start', retried = false): Promise<void> {
     const cm = editorView(view);
     if (!cm) {
       new Notice('This view cannot be read aloud.');
@@ -366,6 +366,7 @@ class ReadAloudPlugin extends Plugin {
       session.model = await this.voiceModel();
     } catch (err) {
       if (this.session === session) this.stop();
+      this.piper.stop();   // a server that does not answer is started anew next time
       new Notice('Read Aloud could not start: ' + errorText(err)
         + '\n\nSee Settings → Read Aloud and the help there.', 15000);
       console.error('Read Aloud:', err);
@@ -379,6 +380,25 @@ class ReadAloudPlugin extends Plugin {
       return;
     }
     this.play(session, seg);
+    this.watchStart(session, view, where, retried);
+  }
+
+  /**
+   * A speech server that is alive but silent (stuck after the computer slept,
+   * or after calibre was updated) would leave the status on "loading" for
+   * ever: if no sound comes in 20 seconds, restart the server and try once more.
+   */
+  watchStart(session: Session, view: MarkdownView, where: 'cursor' | 'start', retried: boolean): void {
+    window.setTimeout(() => {
+      if (this.session !== session || !session.loading || session.paused) return;
+      this.stop();
+      this.piper.stop();
+      if (retried) {
+        new Notice('Read Aloud could not get the speech server to answer. Check calibre in the settings.', 10000);
+        return;
+      }
+      void this.startInView(view, where, true);
+    }, 20000);
   }
 
   /** In reading view, the note offset of the first section on screen. */
